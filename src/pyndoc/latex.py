@@ -184,47 +184,64 @@ class Expression(ABC):
 
 
 class Literal(Expression):
-    def __init__(self, value: Any, format: str = None):
-        self.value = value
+    def __init__(self, expr: Any, format: str = None):
+        self.expr = expr
         self.format = format
 
     def __str__(self) -> str:
         if self.format:
-            return f"{self.value:{self.format}}"
-        return str(self.value)
+            return f"{self.expr:{self.format}}"
+        return str(self.expr)
 
-def literal(value: Any, format: str = None) -> str | Expression:
+
+class ValuedLiteral(Literal):
+    def __init__(self, expr: Any, value: Any, format: str = None):
+        super().__init__(expr)
+        self._value = literal(value, format)
+    
+    @property
+    def value(self) -> Expression:
+        return self._value
+    
+    @value.setter
+    def value(self, value: Any):
+        self._value = literal(value)
+
+    @property
+    def eval(self) -> Any:
+        return self._value.expr
+    
+
+def literal(expr: Any, format: str = None) -> Expression:
     """Create a Literal object.
 
     Parameters
     ----------
-    value : Any
-        The value to be converted to a Literal object.
+    expr : Any
+        The expr to be converted to a Literal object.
     format : str, optional
-        The format string to format the value, by default None
+        The format string to format the expr, by default None
 
     Returns
     -------
-    str | Expression
-        The Literal object.        
+    Expression
+        The Literal object.
     """    
-    if isinstance(value, Expression):
-        return value
-    if isinstance(value, list):
-        if len(value) == 1:
-            return SquareBracket(value[0], scale = True)
-        return Sequence(value)
-    if isinstance(value, tuple):
-        if len(value) == 1:
-            return Bracket(value[0], scale = True)
-        return Sequence(value)
-    if isinstance(value, set):
-        if len(value) == 1:
-            return CurlyBracket(list(value)[0], scale = True)
-        return Sequence(list(value))
-    return Literal(value, format)
-
-value = literal
+    if isinstance(expr, Expression):
+        return expr
+    if isinstance(expr, list):
+        if len(expr) == 1:
+            return SquareBracket(expr[0], scale = True)
+        return Sequence(expr)
+    if isinstance(expr, tuple):
+        if len(expr) == 1:
+            return Bracket(expr[0], scale = True)
+        return Sequence(expr)
+    if isinstance(expr, set):
+        if len(expr) == 1:
+            return CurlyBracket(list(expr)[0], scale = True)
+        return Sequence(list(expr))
+    return Literal(expr, format)
 
 class Argument:
     def __init__(
@@ -467,6 +484,39 @@ class NotEqual(_BinaryOperator):
     def __init__(self, left: Expression, right: Expression):
         super().__init__("\\neq", left, right)
 
+class LimitsExpression(Expression):
+    def __init__(self, function: Macro | str, expr: Expression | Any, lower: Expression | Any = None, upper: Expression | Any = None):
+        if isinstance(function, str):
+            function = Macro(function)
+        self.function = function
+        if lower is not None and not isinstance(lower, Expression):
+            lower = Literal(lower)
+        self.lower = lower
+        if upper is not None and not isinstance(upper, Expression):
+            upper = Literal(upper)
+        self.upper = upper
+        if not isinstance(expr, Expression):
+            expr = Literal(expr)
+        self.expr = expr
+
+    def __str__(self) -> str:
+        if self.lower is None and self.upper is None:
+            return f"{self.function}{self.expr}"
+        if self.lower is None:
+            return f"{self.function}\\limits^{{{self.upper}}}{self.expr}"
+        if self.upper is None:
+            return f"{self.function}\\limits_{{{self.lower}}}{self.expr}"
+        return f"{self.function}\\limits_{{{self.lower}}}^{{{self.upper}}}{self.expr}"
+
+class Integral(LimitsExpression):
+    def __init__(self, expr: Expression | Any, int_var: Expression | Any, lower: Expression | Any = None, upper: Expression | Any = None):
+        super().__init__("int", expr, lower, upper)
+        if not isinstance(int_var, Expression):
+            int_var = Literal(int_var)
+        self.int_var = int_var
+    
+    def __str__(self) -> str:
+        return super().__str__() + f"\\,\\mathrm{{d}}{self.int_var}"
 
 # == LaTeX Math Macros ==
 
@@ -484,7 +534,7 @@ theta = Macro("theta")
 vartheta = Macro("vartheta")
 iota = Macro("iota")
 kappa = Macro("kappa")
-lambda_ = Macro("lambda_")
+lambda_ = Macro("lambda")
 mu = Macro("mu")
 nu = Macro("nu")
 xi = Macro("xi")
@@ -656,4 +706,14 @@ brace = curly_bracket
 def angle_bracket(expr: str | Expression, scale: bool = False) -> str:
     return AngleBracket(expr, scale)
 
+def sum(expr: str | Expression, lower: str | Expression = None, upper: str | Expression = None) -> str:
+    return LimitsExpression("sum", expr, lower, upper)
+
+def integral(expr: str | Expression, int_var: str | Expression, lower: str | Expression = None, upper: str | Expression = None) -> str:
+    return Integral(expr, int_var, lower, upper)
+
+
 sym = literal
+
+
+var = ValuedLiteral

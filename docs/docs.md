@@ -43,6 +43,18 @@ These can be applied to code blocks or to inline code, such as `` `a=25`{.py} Th
 
 The preprocessor allows for much more compact syntax, and is enabled by passing the `--preprocess` option to the filter. It also allows for the inclusion of other markdown files, akin to the `\input{}` command in LaTeX. 
 
+For example, without the preprocessor one might write
+
+```markdown
+`a=25`{.py} The square root of `print(a)`{.py} is `print(math.sqrt(a))`{.py}.
+```
+
+With the preprocessor, this becomes
+
+```markdown
+%{a=25} The square root of %a is %math.sqrt(a).
+```
+
 #### General Code
 
 Python code can be included in the document with the syntax ``%{...}`` or ``%%{...}``. The former is the equivalent of a code block (or inline code) with the `.py` class, and the latter (double `%%`) is the equivalent of a code block with the `.py-md` class. This can include multiline code, single expressions, or expressions separated by semicolons.
@@ -61,3 +73,45 @@ Python files and markdown files can be included with `%%%py{file_path}` and `%%%
 
 For python files, the file is executed and any output is included in the document. It is the exact equivalent of `` `file_path`{.py-file} ``. A semicolon will, as normal, suppress the output.
 
+## Panflute elements
+
+Any `.py-md` blocks expect to evaluate to a single Panflute element. Constructing such elements from scratch can be quite verbose and fiddly (since Panflute generally is not designed to be constructed manually, only modified). To counteract this, a module `markdown.py` is automatically imported into filter and so is available in any python code in the documents, under the alias `md`. This module provides a number of helper functions to simplify the creation of Panflute elements. See the [documentation](markdown.md) for more information.
+
+### Note: Tables
+
+Most features are implemented in this module, with the notable exception of tables. Currently, tables should be created by directly using the Panflute API. This will be addressed in a future update.
+
+## Maths
+
+Pyndoc does not disturb the normal maths syntax in markdown, even with the preprocessor enabled. However, since maths is parsed separately by pandoc, it is not possible to include the output of python code in standard maths environments. One could not, for example, write ``We can approximate $\pi$ as $\pi \approx %np.pi:.2f$`` (or the non-preprocessor equivalent). 
+
+Instead, when Python variables or functions should be included in maths, a `.py-md` block should be used to construct a Panflute Math element. To help with this, a module `latex.py` is available under the alias `tex` with a series of convenience functions and classes to make writing maths as natural as possible. See the [documentation](latex.md) for more information.
+
+For example (using the preprocessor syntax),
+
+```markdown
+%{
+    p_i = tex.sym("p_i")
+    eps_i = tex.epsilon["i"]
+    k = tex.sym("k")
+    T = tex.sym("T")
+    j = tex.sym("j")
+    eps_j = tex.epsilon[j]
+    M = tex.sym("M")
+}
+
+The Boltzmann distribution is given by
+
+%%md.math(
+    p_i == tex.exp(- eps_i / (k * T)) / tex.sum(tex.exp(- eps_j / (k * T)), j == 1, M),
+    True
+)
+```
+
+This would be rendered as (in the final document output)
+
+> The Boltzmann distribution is given by
+> 
+> $$p_i = \frac{\exp\left(\frac{-{\epsilon} _ {i}}{k T}\right)}{\sum\limits_{j = 1}^{M}\exp\left(\frac{-{\epsilon} _ {j}}{k T}\right)}$$
+
+Note that this is designed to be as close to standard Python syntax as possible -- division of variables results in a fraction in the output, multiplication results in multiplication, and so on. Of course, in this example there is no need to involve Pyndoc at all -- no part of the equation needs to be dynamically generated, and so this could be written using the normal markdown (LaTeX) maths syntax for the exact same result. See the examples for a more practical use case.

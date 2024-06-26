@@ -1,0 +1,59 @@
+# Maths in Pyndoc
+
+Standard markdown syntax for maths will work as expected. `$a = 4$` will render as $a=4$ and similarly for display maths. This is unaffected by the inclusion of the Pyndoc filter, with or without the preprocessor.
+
+However, since Pandoc does not parse maths in the same way that it parses general text, it's not possible to include code blocks within maths environments. ``$a = `code`$`` is not standard markdown syntax, and so we cannot simply apply a `.py` class like `` $a = `print(a)`{.py}$``. This means that maths cannot be dynamically generated in the same way as other text.
+
+This would be a serious limitation in many applications. To circumvent this, one would have to construct the appropriate Panflute `Math` element directly, which would be quite cumbersome. To make this easier, a module `latex.py` is available under the alias `tex` with a series of convenience functions and classes to make writing maths as natural as possible. This module is automatically imported into the filter, and so is available in any python code in the documents (though usually it would be passed directly to a call to the `md.math` function -- see the `markdown.py` [documentation](markdown.md))
+
+## Using `sympy` as an Alternative
+
+If you are already familiar with the `sympy` python module, you may find it easier to simply use this to generate the expressions you need, then convert them to LaTeX with the `sympy.latex` printer before passing this to the `md.math` function (or `md.equation` for display maths). For example, to construct the equation $x^3 + 2 = 11$, you could write (using the preprocessor syntax)
+```markdown
+%{import sympy}
+
+%%md.equation(
+    sympy.latex(sympy.Eq(sympy.Symbol("x")**3 + 2, 11))
+)
+```
+
+Of course, importing Sympy adds some (albeit small) overhead to converting the document if it isn't used for any of its other capabilities. The equivalent using the `tex` module would be
+```markdown
+%%md.equation(
+    tex.sym("x") ** 3 + 2 == 11
+)
+```
+
+Both produce
+
+> $$a^{3} + 2 = 11$$
+
+## Operators
+
+Maths in Pyndoc is built around the abstract `Expression` class, which allows us to take advantage of Python's operator overloading. For binary operators (`+`, `==`, `/` etc), if either the left or right operand is an `Expression`, the result will be an `Expression` which constructs the appropriate LaTeX. All operators which are handled by the `Expression` class are listed below, in order of precedence (from highest to lowest).
+
+| Operator                     | Example      | LaTeX                                  | Rendered                                | Description                                                                                                                                                                                                                                                                      |
+|------------------------------|--------------|----------------------------------------|-----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `(...)`                      | `(a + 2)`    | `{a+2}`                                | $a+2$                                   | Used just like in normal Python to control the order of evaluation                                                                                                                                                                                                               |
+| `(… , )` (Tuple constructor) | `(a/b,)`     | `\left(\frac{a}{b}\right)`             | $\left(\dfrac{a}{b}\right)$             | A tuple with a single element is encased in (scalable) parentheses. Note that a tuple is constructed by the comma, not just by the parentheses.                                                                                                                                  |
+| `[...]` (List constructor)   | `[a/b]`      | `\left[\frac{a}{b}\right]`             | $\left[\dfrac{a}{b}\right]$             | A list with a single element is encased in (scalable) square brackets                                                                                                                                                                                                            |
+| `{...}` (Set constructor)    | `{a/b}`      | `\left\lbrace\frac{a}{b}\right\rbrace` | $\left\lbrace\dfrac{a}{b}\right\rbrace$ | A set with a single element is encased in (scalable) braces                                                                                                                                                                                                                      |
+| `...[...]`                   | `a[b]`       | `{a}_{b}`                              | $a_b$                                   | An index will be treated as a subscript (assuming `a` is an `Expression` object)                                                                                                                                                                                                 |
+| `**`                         | `a**2`       | `{a}^{2}`                              | $a^2$                                   | The exponentiation operator results in an exponent (superscript)                                                                                                                                                                                                                 |
+| `+` (unary)                  | `+a`         | `+{a}`                                 | $+a$                                    | Unary plus and minus have the expected result.                                                                                                                                                                                                                                   |
+| `-` (unary)                  | `-a`         | `-{a}`                                 | $-a$                                    |                                                                                                                                                                                                                                                                                  |
+| `*`                          | `a*b`        | `a b`                                  | $ab$                                    | The standard multiplication operator is rendered as implicit multiplication                                                                                                                                                                                                      |
+| `@`                          | `a@b`        | `a\times b`                            | $a \times b$                            | The matrix multiplication operator can be used when implicit multiplication would be ambiguous, and inserts a multiplication symbol ($\times$) between the expressions |
+| `/`                          | `a/b`        | `\frac{a}{b}`                          | $\frac{a}{b}$                           | True division results in a fraction                                                                                                                                                                                                                                              |
+| `//`                         | `a//b`       | `\dfrac{a}{b}`                         | $\dfrac{a}{b}$                          | Floor division forces a display-mode fraction, regardless of the math environment (using `\dfrac`)                                                                                                                                                                               |
+| `+` (binary)                 | `a+b`        | `a+b`                                  | $a+b$                                   | Binary addition and subtraction have the expected result in the typeset equation. Note that this overrides the use of `+` for string concatenation if one of the operands is an Expression.                                                                                      |
+| `-` (binary)                 | `a-b`        | `a-b`                                  | $a-b$                                   |                                                                                                                                                                                                                                                                                  |
+| `&`                          | `a & “text”` | `a text`                               | $a text$                                | Since `+` is used for the addition operator, a bitwise AND has been repurposed for string concatenation. The `Expression` is converted to a string, then concatenated with the `str` as normal. Note that the result of this is another `str`, **not** an `Expression` object.   |
+| `==`                         | `a == b`     | `a = b`                                | $a = b$                                 | Conditional tests in the Python code are statements in the LaTeX output.                                                                                                                                                                                                         |
+| `<`                          | `a<b`        | `a < b`                                | $a < b$                                 |                                                                                                                                                                                                                                                                                  |
+| `<=`                         | `a<=b`       | `a \leq b`                             | $a\leq b$                               |                                                                                                                                                                                                                                                                                  |
+| `>`                          | `a>b`        | `a > b`                                | $a > b$                                 |                                                                                                                                                                                                                                                                                  |
+| `>=`                         | `a>=b`       | `a \geq b`                             | $a\geq b$                               |                                                                                                                                                                                                                                                                                  |
+| `!=`                         | `a!=b`       | `a \neq b`                             | $a\neq b$                               |                                                                                                                                                                                                                                                                                  |
+
+

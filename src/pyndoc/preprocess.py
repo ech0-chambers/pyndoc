@@ -254,7 +254,7 @@ def get_format_specifier(contents: str, start: int) -> tuple[int, str]:
         return 0, None
     specifier = matched.group(0)
     if specifier.rstrip() == ":" or (
-        matched.group("fill") == " " and matched.group("sign") == " "
+        matched.group("fill") == " " and matched.group("sign") == " " and matched.group("align") == None
     ):
         # this is a false positive which technically matches the pattern, but isn't supposed to be a format specifier
         return 0, None

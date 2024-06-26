@@ -4,3 +4,4 @@ A standalone Pandoc filter and optional preprocessor to include arbitrary Python
 
 ---
 
+Check out the [documentation](docs/docs.md) for more information on how to use Pyndoc.

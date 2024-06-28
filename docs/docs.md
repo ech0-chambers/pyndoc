@@ -85,7 +85,7 @@ Most features are implemented in this module, with the notable exception of tabl
 
 Pyndoc does not disturb the normal maths syntax in markdown, even with the preprocessor enabled. However, since maths is parsed separately by pandoc, it is not possible to include the output of python code in standard maths environments. One could not, for example, write ``We can approximate $\pi$ as $\pi \approx %np.pi:.2f$`` (or the non-preprocessor equivalent). 
 
-Instead, when Python variables or functions should be included in maths, a `.py-md` block should be used to construct a Panflute Math element. To help with this, a module `latex.py` is available under the alias `tex` with a series of convenience functions and classes to make writing maths as natural as possible. See the [documentation](latex.md) for more information.
+Instead, when Python variables or functions should be included in maths, a `.py-md` block should be used to construct a Panflute Math element. To help with this, a module `latex.py` is available under the alias `tex` with a series of convenience functions and classes to make writing maths as natural as possible. See the [documentation](maths.md) for more information.
 
 For example (using the preprocessor syntax),
 

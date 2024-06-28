@@ -91,20 +91,19 @@ For example (using the preprocessor syntax),
 
 ```markdown
 %{
-    p_i = tex.sym("p_i")
+    p_i = tex.var("p_i")
     eps_i = tex.epsilon["i"]
-    k = tex.sym("k")
-    T = tex.sym("T")
-    j = tex.sym("j")
+    k = tex.var("k")
+    T = tex.var("T")
+    j = tex.var("j")
     eps_j = tex.epsilon[j]
-    M = tex.sym("M")
+    M = tex.var("M")
 }
 
 The Boltzmann distribution is given by
 
-%%md.math(
-    p_i == tex.exp(- eps_i / (k * T)) / tex.sum(tex.exp(- eps_j / (k * T)), j == 1, M),
-    True
+%%md.equation(
+    p_i == tex.exp(- eps_i / (k * T)) / tex.sum(tex.exp(- eps_j / (k * T)), j == 1, M)
 )
 ```
 

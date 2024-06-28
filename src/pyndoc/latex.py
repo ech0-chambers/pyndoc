@@ -390,7 +390,7 @@ class _UnaryOperator(Token):
             return None
         value = (
             self.operand.value.expr
-            if isinstance(self.operand.value, Token)
+            if isinstance(self.operand.value, Literal)
             else self.operand.value
         )
         if isinstance(value, str):
@@ -496,7 +496,7 @@ def as_expression(expr: Any) -> Expression:
             try:
                 value = float(expr)
             except ValueError:
-                value = None
+                value = expr
         expr = Expression(value)
     if not isinstance(expr, Expression):
         expr = Expression(expr)
@@ -524,12 +524,12 @@ class _BinaryOperator(Expression):
             return None, None
         left_value = (
             self.left.value.expr
-            if isinstance(self.left.value, Token)
+            if isinstance(self.left.value, Literal)
             else self.left.value
         )
         right_value = (
             self.right.value.expr
-            if isinstance(self.right.value, Token)
+            if isinstance(self.right.value, Literal)
             else self.right.value
         )
         if isinstance(left_value, str):
@@ -681,29 +681,24 @@ class NotEqual(_NonValuedBinaryOperator):
     def __init__(self, left: Token, right: Token):
         super().__init__("\\neq", left, right)
 
-# class LimitsExpression(Expression):
-#     def __init__(self, function: Macro | str, expr: Token | Any, lower: Token | Any = None, upper: Token | Any = None):
-#         if isinstance(function, str):
-#             function = Macro(function)
-#         self.function = function
-#         if lower is not None and not isinstance(lower, Token):
-#             lower = Literal(lower)
-#         self.lower = lower
-#         if upper is not None and not isinstance(upper, Token):
-#             upper = Literal(upper)
-#         self.upper = upper
-#         if not isinstance(expr, Token):
-#             expr = Literal(expr)
-#         self.expr = expr
+class LimitsExpression(Expression):
+    def __init__(self, function: Macro | str, expr: Token | Any, lower: Token | Any = None, upper: Token | Any = None):
+        self.value = None
+        if isinstance(function, str):
+            function = Macro(function)
+        self.function = function
+        self.lower = None if lower is None else as_expression(lower)
+        self.upper = None if upper is None else as_expression(upper)
+        self.expr = as_expression(expr)
 
-#     def __str__(self) -> str:
-#         if self.lower is None and self.upper is None:
-#             return f"{self.function}{self.expr}"
-#         if self.lower is None:
-#             return f"{self.function}\\limits^{{{self.upper}}}{self.expr}"
-#         if self.upper is None:
-#             return f"{self.function}\\limits_{{{self.lower}}}{self.expr}"
-#         return f"{self.function}\\limits_{{{self.lower}}}^{{{self.upper}}}{self.expr}"
+    def __str__(self) -> str:
+        if self.lower is None and self.upper is None:
+            return f"{self.function}{self.expr}"
+        if self.lower is None:
+            return f"{self.function}\\limits^{{{self.upper}}}{self.expr}"
+        if self.upper is None:
+            return f"{self.function}\\limits_{{{self.lower}}}{self.expr}"
+        return f"{self.function}\\limits_{{{self.lower}}}^{{{self.upper}}}{self.expr}"
 
 # class Integral(LimitsExpression):
 #     def __init__(self, expr: Token | Any, int_var: Token | Any, lower: Token | Any = None, upper: Token | Any = None):
@@ -818,14 +813,14 @@ def overline(expr: str | Token) -> str:
 def widetilde(expr: str | Token) -> str:
     return Macro("widetilde", expr)
 
-class _Trig_Function(Token):
+class _Trig_Function(NonCallableToken):
     # Not all of these are actually trig functions, but I don't know what else to call them
     def __init__(self, name: str, expr: str | Token, power: Any = None):
         self.name = name
         
         self.expr = as_expression(expr)
 
-        self.power = as_expression(power)
+        self.power = None if power is None else as_expression(power)
 
     def __str__(self) -> str:
         if self.power is None:
@@ -902,8 +897,8 @@ brace = curly_bracket
 def angle_bracket(expr: str | Token, scale: bool = False) -> str:
     return AngleBracket(expr, scale)
 
-# def sum(expr: str | Token, lower: str | Token = None, upper: str | Token = None) -> str:
-#     return LimitsExpression("sum", expr, lower, upper)
+def sum(expr: str | Token, lower: str | Token = None, upper: str | Token = None) -> str:
+    return LimitsExpression("sum", expr, lower, upper)
 
 # def integral(expr: str | Token, int_var: str | Token, lower: str | Token = None, upper: str | Token = None) -> str:
 #     return Integral(expr, int_var, lower, upper)

@@ -379,6 +379,7 @@ def read_pyndoc_macro(contents: str, start: int) -> tuple[int, str]:
         i += 1
         
     is_solo = is_only_text_on_line(contents, start, i - 1)
+    # i -= 1 # not 100% sure why this is necessary, but it seems to be
     return i - start, format_as_markdown(
         macro_string, is_double, is_quiet, is_solo, specifier=specifier, is_inline=is_inline
     )

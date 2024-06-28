@@ -1,5 +1,7 @@
 # Sample Assignment
 
+<!-- We'll use numpy to generate random parameters for the questions -->
+
 %{
     from numpy.random import randint
 }

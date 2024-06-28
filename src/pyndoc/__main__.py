@@ -193,6 +193,7 @@ def main():
     """    
     args = sys.argv[1:]
     to_preprocess = get_arg(args, ("--preprocess"), is_flag=True, remove=True)
+    only_preprocess = get_arg(args, ("--preprocess-only"), is_flag=True, remove=True)
 
     # remove the log files if they exist
     for log_file in logging_files:
@@ -218,6 +219,9 @@ def main():
         end_time = time.perf_counter_ns()
         logging.info(f"Preprocessing took {(end_time - start_time) / 1e6:.0f} ms.")
         args[-1] = str(temp_file)
+        if only_preprocess:
+            # print(contents)
+            return
 
     # add the filter to the filters list
     filter_file = Path(__file__).parent / "filter.py"

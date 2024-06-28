@@ -1,6 +1,6 @@
 # Maths in Pyndoc
 
-Standard markdown syntax for maths will work as expected. `$a = 4$` will render as $a=4$ and similarly for display maths. This is unaffected by the inclusion of the Pyndoc filter, with or without the preprocessor.
+Standard markdown syntax for maths will work as expected. `$a = 4$` will render as $a=4$ and similarly for display mode maths. This is unaffected by the inclusion of the Pyndoc filter, with or without the preprocessor.
 
 However, since Pandoc does not parse maths in the same way that it parses general text, it's not possible to include code blocks within maths environments. ``$a = `code`$`` is not standard markdown syntax, and so we cannot simply apply a `.py` class like `` $a = `print(a)`{.py}$``. This means that maths cannot be dynamically generated in the same way as other text.
 
@@ -20,13 +20,13 @@ If you are already familiar with the `sympy` python module, you may find it easi
 Of course, importing Sympy adds some (albeit small) overhead to converting the document if it isn't used for any of its other capabilities. The equivalent using the `tex` module would be
 ```markdown
 %%md.equation(
-    tex.sym("x") ** 3 + 2 == 11
+    tex.var("x") ** 3 + 2 == 11
 )
 ```
 
 Both produce
 
-> $$a^{3} + 2 = 11$$
+> $$x^{3} + 2 = 11$$
 
 ## Operators
 
@@ -57,3 +57,104 @@ Maths in Pyndoc is built around the abstract `Expression` class, which allows us
 | `!=`                         | `a!=b`       | `a \neq b`                             | $a\neq b$                               |                                                                                                                                                                                                                                                                                  |
 
 
+## Printing Values
+
+Additionally, `Expressions` are callable. This is mostly useful for instances of the `Variable` class, which keeps track of a value through most operations. This is best seen through an example. We first instantiate three `Variable`s.
+```markdown
+%{
+    a = tex.var("a", 3)
+    b = tex.var("b", 4)
+    c = tex.var("c", (a **2 + b ** 2)**0.5)
+}
+```
+
+Note that when constructing the `c` variable, we are passing an `Expression` as the value -- this will be automatically evaluated (with some exceptions; see [Expression Evaluation](#expression-evaluation)). We can now write
+```markdown
+Pythagoras' theorem states that for a triangle with side lengths %%md.math(a), %%md.math(b), and %%md.math(c), the following relationship holds:
+%%md.equation(
+    a ** 2 + b ** 2 == c ** 2
+)
+```
+
+This would be rendered as follows:
+
+> Pythagoras' theorem states that for a triangle with side lengths $a$, $b$, and $c$, the following relationship holds:
+> $$a^{2} + b^{2} = c^{2}$$
+
+We can now also write
+```markdown
+For example, if %%md.math(a == a()) and %%md.math(b == b()), then 
+%%md.equation(
+    ( c == tex.sqrt(a() ** 2 + b() ** 2) ) == c()
+)
+```
+> For example, if $a = 3$ and $b = 4$, then
+> 
+> $$c = \sqrt{{3} ^ {2} + {4} ^ {2}} = 5$$
+
+***Note:** I've encased everything before the second `==` in brackets -- see [Quirks](#quirks) to see why.*
+
+### Formatting Numbers
+
+When calling an `Expression` to print its value, we can optionally pass a format specifier which is used when printing the value. This is simply a standard Python format specifier:
+```markdown
+%{
+    import numpy as np
+    pi = tex.var("\pi", np.pi)
+}
+
+The value of $\pi$ is approximately %%md.math(pi('.3f')).
+```
+> The value of $\pi$ is approximately $3.142$.
+
+In addition to the standard format specifiers, there is a special format specifier `el` (or `EL`) which will print the value in scientific notation using LaTeX syntax. For example,
+```markdown
+%%md.math(pi('.3el'))
+```
+> $3.142 \times 10^{0}$
+
+#### Automatic Truncation
+
+If no format specifier is provided, the value is converted as though by `str()`. However, for floats there is an additional check -- if the value has more than $6$ decimal places and there is no format specifier, it is assumed that this is a floating point rounding error. The value is truncated to 6dp, and any trailing zeros are removed (including the decimal point if this results in an integer). This can be prevented by providing any format specifier. Additionally, this tolerance can be changed by setting the value of `tex.AUTO_TRUNCATE_LENGTH` (default 6). A negative `AUTO_TRUNCATE_LENGTH` will skip this check entirely.
+
+### Units
+
+The inclusion of units is more challenging from a technical perspective. If the output format is LaTeX-based, then the `siunitx` package covers all needs for typesetting units. However, for other formats this is not the case and often `siunitx` is incompatible. For example, for all HTML-based output formats, MathJax 3 does not have a plugin for `siunitx` (though MathJax 2 does, if you are able to configure that yourself).
+
+Despite this, `siunitx` is still the best tool for handling units and so that is what will be used for the forseeable future. In addition to the optional `format` argument, `Expression`s can take an optional `unit` argument. This should be a string which is a valid `siunitx` unit, such as `r"\meter\per\second"`. This will simply be converted to an `\SI` macro. For example,
+```markdown
+%{
+    v = tex.var("v", 3)
+}
+
+The car moves at a speed of %%md.math(v(unit = r"\meter\per\second")).
+```
+> The car moves at a speed of $3\,\mathrm{m}\mathrm{s}^{-1}$.
+
+***Note:** Here, I've manually typeset the unit so that it will display correctly on GitHub. The actual output would be ``The car moves at a speed of $\SI{3}{\meter\per\second}$``.*
+
+## Quirks
+
+### Equality and Relational Operators
+
+Because we are hijacking Python's relational operators for typesetting, they don't always act as expected. There are two specific cases where this is noticeable. Firstly, if the left-hand side of an equality (or other relational operator) is **not** an `Expression`, then the order will be reversed when typesetting. For example, if `b` is an `Expression` instance, then ``4 == b`` would be typeset as $b = 4$. This is because there is no way to distinguish between `a == b` and `b == a` in the same way as there is for `a + b` and `b + a` etc.
+
+Secondly, repeated relational operators will not act as one might expect. Specifically, ``a == b == c`` does **not** produce $a = b = c$. In order to achieve this result, one would need to encase one "comparison" in brackets. For example, ``a == (b == c)`` or ``(a == b) == c`` would both produce $a = b = c$.
+
+### Expression Order
+
+The order in which expressions are typeset is not changed when the expressions are evaluated. In other words, ``a * 4`` is rendered as $a4$, not the more natural $4a$. Although this module does make some efforts to be convenient for calculation, it's not intended to be a full symbolic maths library. I leave that to much better programmers, such as the team behind `sympy`.
+
+### Expression Evaluation
+
+Most operators will automatically calculate their value (assuming both operands have a value). The operators which do this are
+- `a ** b`, $a^b$
+- `a * b`, $a \times b$
+- `a @ b`, $a \times b$
+- `a / b`, $\frac{a}{b}$ and `a // b`, $\dfrac{a}{b}$ (note that these are *both* evaluated as true division)
+- `a + b`, $a + b$
+- `a - b`, $a - b$
+- `+a` (unary), $a$ (does not change the value)
+- `-a` (unary), $-a$
+
+Additionally, an index does not change the value of the expression. For example, if `a` is an `Expression` instance, then `a[2]` will be rendered as $a_2$, but will retain the same value as `a`.

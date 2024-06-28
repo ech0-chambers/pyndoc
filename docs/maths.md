@@ -6,6 +6,8 @@ However, since Pandoc does not parse maths in the same way that it parses genera
 
 This would be a serious limitation in many applications. To circumvent this, one would have to construct the appropriate Panflute `Math` element directly, which would be quite cumbersome. To make this easier, a module `latex.py` is available under the alias `tex` with a series of convenience functions and classes to make writing maths as natural as possible. This module is automatically imported into the filter, and so is available in any python code in the documents (though usually it would be passed directly to a call to the `md.math` function -- see the `markdown.py` [documentation](markdown.md))
 
+For a practical example showing use of `Variable`s, formatting and printing, and units, see [math_example.md](examples/math_example.md?plain=1) and the corresponding [math_example.pdf](examples/math_example.pdf).
+
 ## Using `sympy` as an Alternative
 
 If you are already familiar with the `sympy` python module, you may find it easier to simply use this to generate the expressions you need, then convert them to LaTeX with the `sympy.latex` printer before passing this to the `md.math` function (or `md.equation` for display maths). For example, to construct the equation $x^3 + 2 = 11$, you could write (using the preprocessor syntax)

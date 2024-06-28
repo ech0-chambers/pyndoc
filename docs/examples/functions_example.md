@@ -1,3 +1,5 @@
+<!-- To be compiled including `packages.tex` in the header -->
+
 # Nuclear Fusion in Stars
 
 %%%py{atomic.py}

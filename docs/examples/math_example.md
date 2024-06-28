@@ -1,3 +1,5 @@
+<!-- To be compiled including `packages.tex` in the header -->
+
 # Sample Assignment
 
 <!-- We'll use numpy to generate random parameters for the questions -->

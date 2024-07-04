@@ -4,6 +4,7 @@ import socket
 import json
 from pathlib import Path
 import sys
+import time
 from typing import Dict
 import panflute
 import threading
@@ -24,10 +25,11 @@ import pyndoc.latex as tex
 
 # Configuration
 HOST: str = '127.0.0.1'
-MAX_TIMEOUT: int = 10
+MAX_TIMEOUT: int = 1
 METADATA_FILE: Path = Path(".pyndoc.json")
 
 md.TARGET_FORMAT = None
+tex.TARGET_FORMAT = None
 
 def deindent(code: str) -> str:
     # remove the indentation from the code block based on the first line
@@ -76,6 +78,7 @@ def check_format():
                 return
             md.TARGET_FORMAT = metadata['format']
             md.TARGET_FORMAT = Format[md.TARGET_FORMAT.upper()]
+            tex.TARGET_FORMAT = md.TARGET_FORMAT
     if md.TARGET_FORMAT not in Format:
         raise ValueError(f"Invalid format: {md.TARGET_FORMAT}")
     logging.info(f"Using format: {md.TARGET_FORMAT}")

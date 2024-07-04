@@ -1,5 +1,69 @@
 from abc import ABC, abstractmethod
+import re
 from typing import Any, Dict, List, Tuple
+import pint
+
+ureg = pint.UnitRegistry()
+
+TARGET_FORMAT = None
+
+
+@pint.register_unit_format("Ls")
+def format_unit_simple(unit, registry, **options):
+    return "\\,".join(f"\\mathrm{{{u}}}{('^{' + str(int(p)) + '}') if p != 1 else ''}" for u, p in unit.items())
+
+def format_si_unit(units: str, html: bool = False) -> str:
+    if html:
+        output = f"{ureg.parse_expression(units).units:~Hs}"
+        # output = re.sub(r"\bdeg\b", "&deg;", output)
+        output = output.replace("deg", "&deg;")
+        return output
+    output = f"{ureg.parse_expression(units).units:~Ls}"
+    output = re.sub(r"\bdeg\b", r"^{\\circ}", output)
+    return output
+
+prefixes = [
+    "quecto",
+    "deca",
+    "ronto",
+    "hecto",
+    "yocto",
+    "kilo",
+    "zepto",
+    "mega",
+    "atto",
+    "giga",
+    "femto",
+    "tera",
+    "pico",
+    "peta",
+    "nano",
+    "exa",
+    "micro",
+    "zetta",
+    "milli",
+    "yotta",
+    "centi",
+    "ronna",
+    "deci",
+    "quetta",
+]
+
+def siunit_html(units: str, inside_math: bool = False) -> str:
+    # We're receiving a string in the siunitx format, like "\centi\meter\per\second\squared"
+    # Need to transform into something like "centimeter per second squared"
+    # check for any prefixes and join them to the unit
+    # remove the backslashes
+
+    for prefix in prefixes:
+        units = re.sub(rf"\\{prefix}\\", prefix, units)
+    
+    # remove the backslashes
+    units = units.replace("\\", " ")
+    units = re.sub(r"\s+", " ", units)  # remove multiple spaces
+    if inside_math:
+        return format_si_unit(units)
+    return "\(" + format_si_unit(units) + "\)"
 
 MULTIPLICATION_OPERATOR = "\\times"
 AUTO_TRUNCATE_LENGTH = 6
@@ -177,7 +241,12 @@ class Expression(Token, ABC):
                 print_value = print_value.rstrip(".") # if the decimal is empty, remove the dot
             if unit is None:
                 return Literal(print_value)
-            return Macro("SI", print_value, unit)
+            if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
+                return Macro("SI", print_value, unit)
+            if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
+                unit = siunit_html(unit, True)
+                return f"{print_value} {unit}"
+            return f"{print_value} {unit}"
         latex = False
         if "el" in format.lower() and unit is None:
             latex = True
@@ -189,7 +258,12 @@ class Expression(Token, ABC):
             print_value = f"{left} \\times 10^{{{right}}}"
         if unit is None:
             return Literal(print_value)
-        return Macro("SI", print_value, unit)
+        if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
+            return Macro("SI", print_value, unit)
+        if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
+            unit = siunit_html(unit, True)
+            return f"{print_value} {unit}"
+        return f"{print_value} {unit}"
 
     def __str__(self) -> str:
         return str(self.value)
@@ -427,11 +501,21 @@ class Positive(_UnaryOperator):
         if format is None:
             if unit is None:
                 return Literal(value)
-            return Macro("SI", value, unit)
+            if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
+                return Macro("SI", value, unit)
+            if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
+                unit = siunit_html(unit, True)
+                return f"{value} {unit}"
+            return f"{print_value} {unit}"
         print_value = f"{value:{format}}"
         if unit is None:
             return Literal(print_value)
-        return Macro("SI", print_value, unit)
+        if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
+            return Macro("SI", print_value, unit)
+        if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
+            unit = siunit_html(unit, True)
+            return f"{print_value} {unit}"
+        return f"{print_value} {unit}"
     
 class Negative(_UnaryOperator):
     def __init__(self, operand: Token):
@@ -450,11 +534,21 @@ class Negative(_UnaryOperator):
         if format is None:
             if unit is None:
                 return Literal(value)
-            return Macro("SI", value, unit)
+            if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
+                return Macro("SI", value, unit)
+            if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
+                unit = siunit_html(unit, True)
+                return f"{value} {unit}"
+            return f"{print_value} {unit}"
         print_value = f"{value:{format}}"
         if unit is None:
             return Literal(print_value)
-        return Macro("SI", print_value, unit)
+        if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
+            return Macro("SI", print_value, unit)
+        if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
+            unit = siunit_html(unit, True)
+            return f"{print_value} {unit}"
+        return f"{print_value} {unit}"
 
 class Subscript(_UnaryOperator):
     def __init__(self, operand: Token):

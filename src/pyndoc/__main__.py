@@ -231,7 +231,7 @@ def main():
         current_filters.append(str(filter_file))
         replace_arg(args, ("--filter", "-F"), ",".join(current_filters))
     else:
-        args.insert(-1, f"--filter={filter_file}")
+        args.append(f"--filter={filter_file}")
 
     target_format = get_format(args)
     start_time = time.perf_counter_ns()

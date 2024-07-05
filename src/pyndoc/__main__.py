@@ -185,6 +185,39 @@ def get_format(args) -> str:
 
 logging_files = ["pyndoc.log", "pyndoc.filters.log", "pyndoc.server.log"]
 
+return_codes = {
+    1:  "PandocIOError",
+    3:  "PandocFailOnWarningError",
+    4:  "PandocAppError",
+    5:  "PandocTemplateError",
+    6:  "PandocOptionError",
+    21: "PandocUnknownReaderError",
+    22: "PandocUnknownWriterError",
+    23: "PandocUnsupportedExtensionError",
+    24: "PandocCiteprocError",
+    25: "PandocBibliographyError",
+    31: "PandocEpubSubdirectoryError",
+    43: "PandocPDFError",
+    44: "PandocXMLError",
+    47: "PandocPDFProgramNotFoundError",
+    61: "PandocHttpError",
+    62: "PandocShouldNeverHappenError",
+    63: "PandocSomeError",
+    64: "PandocParseError",
+    66: "PandocMakePDFError",
+    67: "PandocSyntaxMapError",
+    83: "PandocFilterError",
+    84: "PandocLuaError",
+    89: "PandocNoScriptingEngine",
+    91: "PandocMacroLoop",
+    92: "PandocUTF8DecodingError",
+    93: "PandocIpynbDecodingError",
+    94: "PandocUnsupportedCharsetError",
+    97: "PandocCouldNotFindDataFileError",
+    98: "PandocCouldNotFindMetadataFileError",
+    99: "PandocResourceNotFound",
+}
+
 
 def main():
     """Main function for the command line interface. Parses the command line
@@ -250,8 +283,10 @@ def main():
     result = subprocess.run(["pandoc", *args], capture_output=True)
     if result.returncode != 0:
         print(result.stderr.decode())
+        raise Exception(f"Pandoc failed with return code {result.returncode}: {return_codes.get(result.returncode, 'Unknown error')}")
     else:
         print(result.stdout.decode())
+    logging.info(f"Pandoc took {(time.perf_counter_ns() - start_time) / 1e6:.0f} ms and returned {result.returncode}.")
     end_time = time.perf_counter_ns()
     logging.info(f"Pandoc took {(end_time - start_time) / 1e6:.0f} ms.")
     if to_preprocess:

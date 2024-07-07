@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import time
 from typing import Dict
 
@@ -76,7 +77,7 @@ def start_server() -> int:
     delay = 0.01
     server_file = Path(__file__).parent / "server.py"
     # start server, without blocking the main process
-    subprocess.Popen(["python3", str(server_file)])
+    subprocess.Popen([sys.executable, str(server_file)])
     for i in range(retries):
         port = get_active_server()
         if port is not None:

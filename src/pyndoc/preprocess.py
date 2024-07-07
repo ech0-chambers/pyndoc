@@ -507,6 +507,12 @@ def preprocess(contents: str) -> str:
     while i < len(contents):
         next_char = contents[i + 1] if i + 1 < len(contents) else None
         c = contents[i]
+        if contents[i:].startswith("<!--"):
+            # this is the start of a comment. Skip until the end of the comment
+            while not contents[i:].startswith("-->") and i < len(contents):
+                i += 1
+            i += 3
+            continue
         if c == "\\":
             # escape character
             new_text.write(c)

@@ -10,4 +10,8 @@ setup(
         "pyyaml",
         "pint",
     ],
+    package_data = {
+        "pyndoc": ["filter.py"]
+    },
+    include_package_data=True,
 )

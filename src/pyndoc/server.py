@@ -25,7 +25,7 @@ import pyndoc.latex as tex
 
 # Configuration
 HOST: str = '127.0.0.1'
-MAX_TIMEOUT: int = 1
+MAX_TIMEOUT: int = 5
 METADATA_FILE: Path = Path(".pyndoc.json")
 
 md.TARGET_FORMAT = None

@@ -360,11 +360,19 @@ def read_pyndoc_macro(contents: str, start: int) -> tuple[int, str]:
             if field is not None:
                 macro_string.write("." + field)
                 i += skip
+            else:
+                i -= 1
+                break
         next_char = contents[i] if i < len(contents) else None
     macro_string = macro_string.getvalue()
+    stripped = macro_string.strip()
+    stripped_len = len(macro_string) - len(stripped)
+    macro_string = stripped
+    i -= stripped_len
+    logging.info(f"Macro string: {macro_string}")
     if macro_string.endswith("."):
         macro_string = macro_string[:-1]
-        i -= 1
+        i -= 2
     
     if i < len(contents) and contents[i] == ":":  
         # format specifier

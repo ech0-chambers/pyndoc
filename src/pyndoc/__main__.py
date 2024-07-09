@@ -289,8 +289,8 @@ def main():
     logging.info(f"Pandoc took {(time.perf_counter_ns() - start_time) / 1e6:.0f} ms and returned {result.returncode}.")
     end_time = time.perf_counter_ns()
     logging.info(f"Pandoc took {(end_time - start_time) / 1e6:.0f} ms.")
-    if to_preprocess:
-        temp_file.unlink()
+    # if to_preprocess:
+    #     temp_file.unlink()
     stop_server(port)
     try:
         metadata_file.unlink()

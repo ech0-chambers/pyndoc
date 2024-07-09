@@ -8,6 +8,7 @@ ureg = pint.UnitRegistry()
 TARGET_FORMAT = None
 
 
+
 @pint.register_unit_format("Ls")
 def format_unit_simple(unit, registry, **options):
     return "\\,".join(f"\\mathrm{{{u}}}{('^{' + str(int(p)) + '}') if p != 1 else ''}" for u, p in unit.items())
@@ -219,6 +220,9 @@ class Literal(Token):
         return self.expr
 
 
+failed_conversion = Literal(r"\text{\color{red}None}")
+
+
 class Expression(Token, ABC):
     def __init__(self, value: Any = None):
         if isinstance(value, Expression):
@@ -229,7 +233,7 @@ class Expression(Token, ABC):
 
     def __call__(self, format: str = None, unit: str = None) -> str:
         if self.value is None:
-            return Literal(r"\text{None}")
+            return failed_conversion
         if format is None:
             print_value = str(self.value)
             if AUTO_TRUNCATE_LENGTH > 0 and "." in print_value and len(print_value.split(".")[1]) > AUTO_TRUNCATE_LENGTH:
@@ -282,7 +286,7 @@ class Expression(Token, ABC):
             return None
         
     def __int__(self) -> int:
-        value = float(self)
+        value = self.__float__()
         if value is None:
             return None
         return int(value)
@@ -448,7 +452,35 @@ class AngleBracket(Bracket):
         self.right_delim = "\\rangle"
 
 
-class _UnaryOperator(Token):
+class Absolute(Bracket):
+    def __init__(self, children: str | Token | List[Token], scale: bool = False):
+        super().__init__(children, scale)
+        self.left_delim = "\\lvert"
+        self.right_delim = "\\rvert"
+
+    def __float__(self):
+        if len(self.children) != 1:
+            return None
+        return abs(float(self.children[0]))
+
+    def __int__(self):
+        if len(self.children) != 1:
+            return None
+        return abs(int(self.children[0]))
+    
+    def __call__(self, format: str | None = None, unit: str | None = None, show_brackets: bool = False):
+        if len(self.children) != 1:
+            return failed_conversion
+        child = self.children[0]
+        if show_brackets:
+            return f"\\left|{child(format, unit)}\\right|"
+        if float(child) is None:
+            return failed_conversion
+        child_value = abs(float(child))
+        return var("", child_value)(format, unit)
+
+
+class _UnaryOperator(Expression):
     def __init__(self, operator: str, operand: Token, group: bool = False):
         self.operator = operator
         self.operand = operand
@@ -486,6 +518,7 @@ class _UnaryOperator(Token):
 class Positive(_UnaryOperator):
     def __init__(self, operand: Token):
         super().__init__("+", operand)
+        self.value = self.calc_value()
 
     def calc_value(self) -> Any:
         # should this return abs? or should it just return the value?
@@ -497,7 +530,7 @@ class Positive(_UnaryOperator):
     def __call__(self, format: str = None, unit: str = None) -> str:
         value = self.calc_value()
         if value is None:
-            return Literal(r"\text{None}")
+            return failed_conversion
         if format is None:
             if unit is None:
                 return Literal(value)
@@ -520,6 +553,7 @@ class Positive(_UnaryOperator):
 class Negative(_UnaryOperator):
     def __init__(self, operand: Token):
         super().__init__("-", operand)
+        self.value = self.calc_value()
 
     def calc_value(self) -> Any:
         value = self.get_value()
@@ -527,10 +561,13 @@ class Negative(_UnaryOperator):
             return None
         return -value
 
+    def is_integer(self):
+        return float(self.operand).is_integer()
+
     def __call__(self, format: str = None, unit: str = None) -> str:
         value = self.calc_value()
         if value is None:
-            return Literal(r"\text{None}")
+            return failed_conversion
         if format is None:
             if unit is None:
                 return Literal(value)
@@ -549,6 +586,12 @@ class Negative(_UnaryOperator):
             unit = siunit_html(unit, True)
             return f"{print_value} {unit}"
         return f"{print_value} {unit}"
+    
+    def __float__(self):
+        value = self.calc_value()
+        if value is None:
+            return None
+        return float(value)
 
 class Subscript(_UnaryOperator):
     def __init__(self, operand: Token):
@@ -626,20 +669,21 @@ class _BinaryOperator(Expression):
             if isinstance(self.right.value, Literal)
             else self.right.value
         )
-        if isinstance(left_value, str):
+        
+        if isinstance(left_value, (str, Expression)):
             try:
                 left_value = float(left_value)
             except ValueError:
                 return None, None
-        if isinstance(right_value, str):
+        if isinstance(right_value, (str, Expression)):
             try:
                 right_value = float(right_value)
             except ValueError:
                 return None, None
-            
-        if not isinstance(left_value, int) and left_value.is_integer():
+        
+        if isinstance(left_value, float) and left_value.is_integer():
             left_value = int(left_value)
-        if not isinstance(right_value, int) and right_value.is_integer():
+        if isinstance(right_value, float) and right_value.is_integer():
             right_value = int(right_value)
 
         if not isinstance(left_value, (float, int)):
@@ -987,6 +1031,9 @@ def curly_bracket(expr: str | Token, scale: bool = False) -> str:
     return CurlyBracket(expr, scale)
 
 brace = curly_bracket
+
+def absolute(expr: str | Token, scale: bool = True) -> str:
+    return Absolute(expr, scale)
 
 def angle_bracket(expr: str | Token, scale: bool = False) -> str:
     return AngleBracket(expr, scale)

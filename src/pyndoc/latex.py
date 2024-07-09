@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Tuple
 import pint
 
 ureg = pint.UnitRegistry()
+ureg.define("electronvolt = 1.602176634e-19 * joules = eV")
 
 TARGET_FORMAT = None
 
@@ -11,7 +12,7 @@ TARGET_FORMAT = None
 
 @pint.register_unit_format("Ls")
 def format_unit_simple(unit, registry, **options):
-    return "\\,".join(f"\\mathrm{{{u}}}{('^{' + str(int(p)) + '}') if p != 1 else ''}" for u, p in unit.items())
+    return "\\ " + "\\,".join(f"\\mathrm{{{u}}}{('^{' + str(int(p)) + '}') if p != 1 else ''}" for u, p in unit.items())
 
 def format_si_unit(units: str, html: bool = False) -> str:
     if html:

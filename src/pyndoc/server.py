@@ -253,6 +253,8 @@ def handle_client(connection: socket.socket, listening: threading) -> None:
             listening.set()
             
 
+time_per_request = 0.1
+
 def main() -> None:
     """Main server function."""
     port: int = find_open_port()
@@ -266,25 +268,39 @@ def main() -> None:
 
         listening = threading.Event()
 
+        timeouts = MAX_TIMEOUT / time_per_request # there's definitely a better way to do this, but this works even when we're dispatching new threads to handle clients
         while not listening.is_set():
-            try:
-                server_socket.settimeout(MAX_TIMEOUT)
-                conn: socket.socket
-                addr: tuple[str, int]
-                conn, addr = server_socket.accept()
+            while timeouts > 0:
+                if listening.is_set():
+                    break
+                try:
+                    server_socket.settimeout(time_per_request)
+                    conn: socket.socket
+                    addr: tuple[str, int]
+                    conn, addr = server_socket.accept()
 
-                if addr[0] != HOST:
-                    logging.warning(f"Connection from {addr[0]} refused.")
+                    if addr[0] != HOST:
+                        logging.warning(f"Connection from {addr[0]} refused.")
+                        continue
+
+                    # Create a new thread to handle the client
+                    client_thread = threading.Thread(target=handle_client, args=(conn,listening))
+                    client_thread.start()  
+                    logging.info(f"Started new thread to handle client from {addr}")
+                    timeouts = MAX_TIMEOUT / time_per_request
+                except socket.timeout:
+                    timeouts -= 1
                     continue
-
-                # Create a new thread to handle the client
-                client_thread = threading.Thread(target=handle_client, args=(conn,listening))
-                client_thread.start()  
-                logging.info(f"Started new thread to handle client from {addr}")
-
-            except socket.timeout:
-                logging.info(f"Connection timed out. {MAX_TIMEOUT} seconds elapsed.")
+                except Exception as e:
+                    logging.error(f"Error: {e}")
+                    timeouts = MAX_TIMEOUT / time_per_request
+            if not listening.is_set():
+                logging.info("Server timed out. Shutting down.")
                 break
+        if listening.is_set():
+            logging.info("Server shutting down due to shutdown signal")
+        logging.debug(f"Timeouts: {MAX_TIMEOUT - timeouts * time_per_request:.2f}s of {MAX_TIMEOUT}s")
+
 
 if __name__ == "__main__":
     main()

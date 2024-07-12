@@ -223,6 +223,46 @@ class Literal(Token):
 
 failed_conversion = Literal(r"\text{\color{red}None}")
 
+def format_value(value: float | None, fmt: str | None, unit: str | None) -> str:
+    if value is None:
+        return failed_conversion
+    if fmt is None:
+        print_value = str(value)
+        if AUTO_TRUNCATE_LENGTH > 0 and "." in print_value and len(print_value.split(".")[1]) > AUTO_TRUNCATE_LENGTH:
+            # assume this is a floating point rounding error and truncate, then strip trailing zeros
+            integer, decimal = print_value.split(".")
+            decimal = decimal[:6]
+            decimal = decimal.rstrip("0")
+            print_value = f"{integer}.{decimal}"
+            print_value = print_value.rstrip(".") # if the decimal is empty, remove the dot
+        if unit is None:
+            return Literal(print_value)
+        if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
+            return Macro("SI", print_value, unit)
+        if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
+            unit = siunit_html(unit, True)
+            return f"{print_value} {unit}"
+        return f"{print_value} {unit}"
+    latex = False
+    if "el" in fmt.lower() and unit is None:
+        latex = True
+        fmt = fmt.lower().replace("el", "e")
+    if "e" in fmt.lower() and TARGET_FORMAT.name.lower() not in ["latex", "beamer"]:
+        latex = True
+    print_value = f"{value:{fmt}}"
+    if latex:
+        left, right = print_value.lower().split("e")
+        right = str(int(right)) # remove leading zeros and + sign
+        print_value = f"{left} \\times 10^{{{right}}}"
+    if unit is None:
+        return Literal(print_value)
+    if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
+        return Macro("SI", print_value, unit)
+    if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
+        unit = siunit_html(unit, True)
+        return f"{print_value} {unit}"
+    return f"{print_value} {unit}"
+
 
 class Expression(Token, ABC):
     def __init__(self, value: Any = None):
@@ -233,42 +273,7 @@ class Expression(Token, ABC):
         self.value = value
 
     def __call__(self, format: str = None, unit: str = None) -> str:
-        if self.value is None:
-            return failed_conversion
-        if format is None:
-            print_value = str(self.value)
-            if AUTO_TRUNCATE_LENGTH > 0 and "." in print_value and len(print_value.split(".")[1]) > AUTO_TRUNCATE_LENGTH:
-                # assume this is a floating point rounding error and truncate, then strip trailing zeros
-                integer, decimal = print_value.split(".")
-                decimal = decimal[:6]
-                decimal = decimal.rstrip("0")
-                print_value = f"{integer}.{decimal}"
-                print_value = print_value.rstrip(".") # if the decimal is empty, remove the dot
-            if unit is None:
-                return Literal(print_value)
-            if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
-                return Macro("SI", print_value, unit)
-            if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
-                unit = siunit_html(unit, True)
-                return f"{print_value} {unit}"
-            return f"{print_value} {unit}"
-        latex = False
-        if "el" in format.lower() and unit is None:
-            latex = True
-            format = format.lower().replace("el", "e")
-        print_value = f"{self.value:{format}}"
-        if latex:
-            left, right = print_value.lower().split("e")
-            right = str(int(right)) # remove leading zeros and + sign
-            print_value = f"{left} \\times 10^{{{right}}}"
-        if unit is None:
-            return Literal(print_value)
-        if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
-            return Macro("SI", print_value, unit)
-        if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
-            unit = siunit_html(unit, True)
-            return f"{print_value} {unit}"
-        return f"{print_value} {unit}"
+        return format_value(self.value, format, unit)
 
     def __str__(self) -> str:
         return str(self.value)
@@ -530,26 +535,7 @@ class Positive(_UnaryOperator):
 
     def __call__(self, format: str = None, unit: str = None) -> str:
         value = self.calc_value()
-        if value is None:
-            return failed_conversion
-        if format is None:
-            if unit is None:
-                return Literal(value)
-            if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
-                return Macro("SI", value, unit)
-            if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
-                unit = siunit_html(unit, True)
-                return f"{value} {unit}"
-            return f"{print_value} {unit}"
-        print_value = f"{value:{format}}"
-        if unit is None:
-            return Literal(print_value)
-        if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
-            return Macro("SI", print_value, unit)
-        if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
-            unit = siunit_html(unit, True)
-            return f"{print_value} {unit}"
-        return f"{print_value} {unit}"
+        return format_value(value, format, unit)
     
 class Negative(_UnaryOperator):
     def __init__(self, operand: Token):
@@ -567,26 +553,7 @@ class Negative(_UnaryOperator):
 
     def __call__(self, format: str = None, unit: str = None) -> str:
         value = self.calc_value()
-        if value is None:
-            return failed_conversion
-        if format is None:
-            if unit is None:
-                return Literal(value)
-            if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
-                return Macro("SI", value, unit)
-            if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
-                unit = siunit_html(unit, True)
-                return f"{value} {unit}"
-            return f"{print_value} {unit}"
-        print_value = f"{value:{format}}"
-        if unit is None:
-            return Literal(print_value)
-        if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
-            return Macro("SI", print_value, unit)
-        if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
-            unit = siunit_html(unit, True)
-            return f"{print_value} {unit}"
-        return f"{print_value} {unit}"
+        return format_value(value, format, unit)
     
     def __float__(self):
         value = self.calc_value()

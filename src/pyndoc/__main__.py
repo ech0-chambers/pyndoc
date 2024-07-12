@@ -9,11 +9,13 @@ from .server_utils import get_or_start_server, stop_server
 
 import logging
 
-def start_logging():
+def start_logging(logging_level: str | None = None):
     """Start logging to a file."""
+    if logging_level is not None:
+        logging_level = logging.getLevelName(logging_level.upper())
     logging.basicConfig(
         filename="pyndoc.log",
-        level=logging.DEBUG,
+        level=logging.DEBUG if logging_level is None else logging_level,
         format="%(asctime)s - %(levelname)s - %(message)s",
         filemode="w+",
     )
@@ -235,7 +237,8 @@ def main():
         except FileNotFoundError:
             pass
 
-    start_logging()
+    logging_level = get_arg(args, ("--log-level"), remove=True)
+    start_logging(logging_level)
 
     if to_preprocess:
         logging.info("Preprocessing file.")
@@ -286,9 +289,8 @@ def main():
         raise Exception(f"Pandoc failed with return code {result.returncode}: {return_codes.get(result.returncode, 'Unknown error')}")
     else:
         print(result.stdout.decode())
-    logging.info(f"Pandoc took {(time.perf_counter_ns() - start_time) / 1e6:.0f} ms and returned {result.returncode}.")
     end_time = time.perf_counter_ns()
-    logging.info(f"Pandoc took {(end_time - start_time) / 1e6:.0f} ms.")
+    logging.info(f"Pandoc took {(end_time - start_time) / 1e6:.0f} ms and returned {result.returncode}.")
     if to_preprocess:
         temp_file.unlink()
     stop_server(port)

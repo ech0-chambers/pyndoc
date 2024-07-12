@@ -369,7 +369,7 @@ def read_pyndoc_macro(contents: str, start: int) -> tuple[int, str]:
     stripped_len = len(macro_string) - len(stripped)
     macro_string = stripped
     i -= stripped_len
-    logging.info(f"Macro string: {macro_string}")
+    logging.debug(f"Macro string: {macro_string}")
     if macro_string.endswith("."):
         macro_string = macro_string[:-1]
         i -= 2

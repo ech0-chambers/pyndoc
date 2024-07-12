@@ -1013,8 +1013,7 @@ def sum(expr: str | Token, lower: str | Token = None, upper: str | Token = None)
 #     return Integral(expr, int_var, lower, upper)
 
 
-# sym = literal
-
+sym = as_expression
 
 var = Variable
 
@@ -1041,3 +1040,57 @@ def split(lines: List[str | Token | Tuple[str | Token]], environment = "split") 
 # empty = Literal("")
 
 alignment = Literal("&")
+
+def __pythonify_name(name: str) -> str:
+    # convert a string into a valid python variable name
+    replacements = [
+        (" ", "_"),
+        ("-","_"),
+        ("\\", ""),
+    ]
+    for old, new in replacements:
+        name = name.replace(old, new)
+    if not name[0].isalpha():
+        name = "_" + name
+    for c in name:
+        if not c.isalnum() and c != "_":
+            name = name.replace(c, "")
+    return name
+
+def define_symbols(statements: str, namespace: dict | None = None) -> None:
+    # This is absolutely not safe, but anyone with access to this function has access to the entire python environment anyway
+    statements_list = statements.split("\n")
+    statements_list = [stmt.split(";") for stmt in statements_list]
+    # collapse the list to 1d
+    statements_list = [stmt.strip() for stmts in statements_list for stmt in stmts]
+    # remove comments which start with #
+    statements_list = [stmt.split("#")[0].strip() for stmt in statements_list]
+    # remove empty lines
+    statements_list = [stmt for stmt in statements_list if stmt]
+    assignments = []
+    for statement in statements_list:
+        if not "=" in statement:
+            new_name = __pythonify_name(statement)
+            if namespace is not None and new_name in namespace:
+                raise ValueError(f"Symbol {new_name} already defined")
+            new_symbol = as_expression(statement)
+            if namespace is not None:
+                namespace[new_name] = new_symbol
+            assignments.append(new_symbol)
+            continue
+        name, value = statement.split("=")
+        name = name.strip()
+        value = value.strip()
+        matched = re.match(r"(\"|\').*?(\1)", value)
+        if matched:
+            value = value[1:-1]
+        new_name = __pythonify_name(name)
+        if namespace is not None and new_name in namespace:
+            raise ValueError(f"Symbol {new_name} already defined")
+        new_symbol = Variable(name, value)
+        if namespace is not None:
+            namespace[new_name] = new_symbol
+        assignments.append(new_symbol)
+    return assignments
+
+symbols = define_symbols

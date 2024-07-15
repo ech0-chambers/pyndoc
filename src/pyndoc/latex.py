@@ -223,6 +223,23 @@ class Literal(Token):
 
 failed_conversion = Literal(r"\text{\color{red}None}")
 
+html_output_formats = [
+    "html",
+    "chunkedhtml",
+    "html5",
+    "html4",
+    "slideous",
+    "slidy",
+    "dzslides",
+    "revealjs",
+    "s5"
+]
+
+latex_output_formats = [
+    "latex",
+    "beamer",
+]
+
 def format_value(value: float | None, fmt: str | None, unit: str | None) -> str:
     if value is None:
         return failed_conversion
@@ -237,9 +254,9 @@ def format_value(value: float | None, fmt: str | None, unit: str | None) -> str:
             print_value = print_value.rstrip(".") # if the decimal is empty, remove the dot
         if unit is None:
             return Literal(print_value)
-        if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
+        if TARGET_FORMAT.name.lower() in latex_output_formats:
             return Macro("SI", print_value, unit)
-        if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
+        if TARGET_FORMAT.name.lower() in html_output_formats:
             unit = siunit_html(unit, True)
             return f"{print_value} {unit}"
         return f"{print_value} {unit}"
@@ -247,7 +264,7 @@ def format_value(value: float | None, fmt: str | None, unit: str | None) -> str:
     if "el" in fmt.lower() and unit is None:
         latex = True
         fmt = fmt.lower().replace("el", "e")
-    if "e" in fmt.lower() and TARGET_FORMAT.name.lower() not in ["latex", "beamer"]:
+    if "e" in fmt.lower() and TARGET_FORMAT.name.lower() not in latex_output_formats:
         latex = True
     print_value = f"{value:{fmt}}"
     if latex:
@@ -258,7 +275,7 @@ def format_value(value: float | None, fmt: str | None, unit: str | None) -> str:
         return Literal(print_value)
     if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
         return Macro("SI", print_value, unit)
-    if TARGET_FORMAT.name.lower() in ["html", "chunkedhtml", "revealjs"]:
+    if TARGET_FORMAT.name.lower() in html_output_formats:
         unit = siunit_html(unit, True)
         return f"{print_value} {unit}"
     return f"{print_value} {unit}"

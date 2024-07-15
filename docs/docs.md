@@ -69,7 +69,16 @@ The preprocessor also allows for format specifiers, such as `%var:.2f` or `%func
 
 #### Including Files
 
-Python files and markdown files can be included with `%%%py{file_path}` and `%%%md{file_path}` respectively. The path is relative to the current working directory. For markdown files, the file is preprocessed, then included prior to the call to pandoc -- this means it is identical to directly including the file's content in the original document. 
+Python files and markdown files can be included with `%%%py{file_path}` and `%%%md{file_path}` respectively. The path is relative to the current working directory. For markdown files, the file is preprocessed, then included prior to the call to pandoc -- this means it is identical to directly including the file's content in the original document. Additionally, markdown files can be included conditionally based on the target format. This is achieved with the `%%%mdifformat` command.The syntax is as follows:
+
+```markdown
+%%%mdifformat{
+    latex, beamer: path/to/latex/file.md;
+    html: path/to/html/file.md;
+}
+```
+
+This would include `path/to/latex/file.md` if the target format is `latex` or `beamer`, and `path/to/html/file.md` if the target format is `html`. All whitespace and newlines are ignored. If the target format is not listed, no files are included. Just as with `%%%md{...}`, the file is preprocessed, then included before the call to pandoc, so it is as if the file's content was directly included in the original document.
 
 For python files, the file is executed and any output is included in the document. It is the exact equivalent of `` `file_path`{.py-file} ``. A semicolon will, as normal, suppress the output.
 

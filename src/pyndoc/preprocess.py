@@ -3,7 +3,11 @@ from io import StringIO
 from pathlib import Path
 import re
 import logging
+import sys
 from typing import Optional
+from .formats import Format
+
+TARGET_FORMAT = None
 
 def deindent(code: str) -> str:
     # remove the indentation from the code block based on the first line
@@ -476,13 +480,59 @@ def read_pyndoc_block(contents: str, start: int) -> tuple[int, str]:
     is_solo = is_only_text_on_line(contents, start, start + skip - 1)
     return skip, format_block_as_markdown(block, is_quiet, is_solo)
 
+# def capture_output(code):
+#     """Captures the output of the code execution.
 
-def read_pyndoc_file(contents: str, start: int) -> tuple[int, str]:
+#     Args:
+#         code: The Python code string to be executed.
+
+#     Returns:
+#         The captured output as a string.
+#     """
+
+#     code = deindent(code)
+#     logging.debug("Running code:\n" + code)
+#     old_stdout = sys.stdout
+#     new_stdout = io.StringIO()
+#     sys.stdout = new_stdout
+
+#     try:
+#         exec(code, globals())
+#     except Exception as e:
+#         logging.error(f"{e}")
+#         sys.stdout = old_stdout
+#         raise e
+#     finally:
+#         sys.stdout = old_stdout
+
+#     out = new_stdout.getvalue()
+#     # strip a single newline from the end of the output
+#     if out.endswith("\n"):
+#         out = out[:-1]
+#     # if out.startswith("\n"):
+#     #     out = out[1:]
+#     return out
+
+# md = object()
+
+# def read_pyndoc_pre_block(contents: str, start: int) -> tuple[int, str]:
+#     i = start + len("%%%pre")
+#     end = find_matching_bracket(contents, i)
+#     skip = end - start + 1
+#     block = contents[i + 1 : end]
+#     block = block.strip("\n")
+#     block = deindent(block)
+#     block = capture_output(block)
+#     return skip, block
+
+
+def read_pyndoc_file(contents: str, start: int, target_format: str) -> tuple[int, str]:
     i = start + 5
     end = find_matching_bracket(contents, i)
     skip = end - start + 1
     filename = contents[i + 1 : end]
     filename = filename.strip()
+    filename = filename.replace("{format}", target_format)
     classes = ".py-file"
     is_solo = is_only_text_on_line(contents, start, start + skip - 1)
     is_quiet = end + 1 < len(contents) and contents[end + 1] == ";"
@@ -492,24 +542,53 @@ def read_pyndoc_file(contents: str, start: int) -> tuple[int, str]:
     return skip, f"`` {filename} ``{{{classes}}}"
 
 
-def read_pyndoc_md_file(contents: str, start: int) -> tuple[int, str]:
+def read_pyndoc_md_file(contents: str, start: int, target_format: str) -> tuple[int, str]:
     # read the filename, open the file, preprocess it, and return the contents
     i = start + 5
     end = find_matching_bracket(contents, i)
     skip = end - start + 1
     filename = contents[i + 1 : end]
     filename = filename.strip()
+    filename = filename.replace("{format}", target_format)
     file_path = Path(filename)
     if not file_path.exists():
         throw_parsing_error(contents, start, f"File {filename} does not exist", length = skip)
     with file_path.open("r") as f:
         file_contents = f.read()
-    file_contents = preprocess(file_contents)
+    file_contents = preprocess(file_contents, target_format)
     return skip, file_contents
 
 
+def read_pyndoc_conditional_md_file(contents: str, start: int, target_format: str) -> tuple[int, str]:
+    # %%%mdifformat{
+    #     fmt1, fmt2: path/to/file1.md;
+    #     fmt3: path/to/file2.md;
+    #     fmt4: path/to/file3.md;
+    # }
+    #     - if the target format is fmt1 or fmt2, include the contents of file1.md
+    #     - if the target format is fmt3, include the contents of file2.md
+    #     - if the target format is fmt4, include the contents of file3.md
+    #     - if the target format is not one of the specified formats, do not include any of the files
 
-def preprocess(contents: str) -> str:
+    i = start + len("%%%mdifformat")
+    end = find_matching_bracket(contents, i)
+    skip = end - start + 1
+    options = [option.strip() for option in contents[i + 1 : end].split(";") if len(option.strip()) > 0]
+    options = [option.split(":") for option in options]
+    options = [(fmts.split(","), path) for fmts, path in options]
+    options = [([fmt.strip().lower() for fmt in fmts], path.strip()) for fmts, path in options]
+    for fmts, path in options:
+        if target_format.lower() in fmts:
+            file_path = Path(path)
+            if not file_path.exists():
+                throw_parsing_error(contents, start, f"File {path} does not exist", length = skip)
+            with file_path.open("r") as f:
+                file_contents = f.read()
+            file_contents = preprocess(file_contents, target_format)
+            return skip, file_contents
+    return skip, ""
+
+def preprocess(contents: str, target_format: str | None = None) -> str:
     new_text = StringIO()
     i = 0
     while i < len(contents):
@@ -555,13 +634,19 @@ def preprocess(contents: str) -> str:
             continue
         if contents[i:].startswith("%%%py{"):
             # a pyndoc file inclusion
-            skip, replacement = read_pyndoc_file(contents, i)
+            skip, replacement = read_pyndoc_file(contents, i, target_format)
             new_text.write(replacement)
+            i += skip
+            continue
+        if contents[i:].startswith("%%%mdifformat"):
+            # evaluated during preprocessing
+            skip, block = read_pyndoc_conditional_md_file(contents, i, target_format)
+            new_text.write(block)
             i += skip
             continue
         if contents[i:].startswith("%%%md"):
             # a pyndoc markdown file inclusion
-            skip, replacement = read_pyndoc_md_file(contents, i)
+            skip, replacement = read_pyndoc_md_file(contents, i, target_format)
             new_text.write(replacement)
             i += skip
             continue

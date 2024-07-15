@@ -35,7 +35,7 @@ Both produce
 Maths in Pyndoc is built around the abstract `Expression` class, which allows us to take advantage of Python's operator overloading. For binary operators (`+`, `==`, `/` etc), if either the left or right operand is an `Expression`, the result will be an `Expression` which constructs the appropriate LaTeX. All operators which are handled by the `Expression` class are listed below, in order of precedence (from highest to lowest).
 
 | Operator                     | Example      | LaTeX                                  | Rendered                                | Description                                                                                                                                                                                                                                                                      |
-|------------------------------|--------------|----------------------------------------|-----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|------------------------------|:------------:|----------------------------------------|:---------------------------------------:|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `(...)`                      | `(a + 2)`    | `{a+2}`                                | $a+2$                                   | Used just like in normal Python to control the order of evaluation                                                                                                                                                                                                               |
 | `(… , )` (Tuple constructor) | `(a/b,)`     | `\left(\frac{a}{b}\right)`             | $\left(\dfrac{a}{b}\right)$             | A tuple with a single element is encased in (scalable) parentheses. Note that a tuple is constructed by the comma, not just by the parentheses.                                                                                                                                  |
 | `[...]` (List constructor)   | `[a/b]`      | `\left[\frac{a}{b}\right]`             | $\left[\dfrac{a}{b}\right]$             | A list with a single element is encased in (scalable) square brackets                                                                                                                                                                                                            |
@@ -123,7 +123,7 @@ If no format specifier is provided, the value is converted as though by `str()`.
 
 The inclusion of units is more challenging from a technical perspective. If the output format is LaTeX-based, then the `siunitx` package covers all needs for typesetting units. However, for other formats this is not the case and often `siunitx` is incompatible. For example, for all HTML-based output formats, MathJax 3 does not have a plugin for `siunitx` (though MathJax 2 does, if you are able to configure that yourself).
 
-Despite this, `siunitx` is still the best tool for handling units and so that is what will be used for the forseeable future. In addition to the optional `format` argument, `Expression`s can take an optional `unit` argument. This should be a string which is a valid `siunitx` unit, such as `r"\meter\per\second"`. This will simply be converted to an `\SI` macro. For example,
+Despite this, `siunitx` is still the best tool for handling units and so that is what will be used for the forseeable future. In addition to the optional `format` argument, `Expression`s can take an optional `unit` argument. This should be a string which is a valid `siunitx` unit, such as `r"\meter\per\second"`. In most output formats, this will simply be converted to an `\SI` macro. For example,
 ```markdown
 %{
     v = tex.var("v", 3)
@@ -134,6 +134,8 @@ The car moves at a speed of %%md.math(v(unit = r"\meter\per\second")).
 > The car moves at a speed of $3\,\mathrm{m}\mathrm{s}^{-1}$.
 
 ***Note:** Here, I've manually typeset the unit so that it will display correctly on GitHub. The actual output would be ``The car moves at a speed of $\SI{3}{\meter\per\second}$``.*
+
+If the output format is HTML-based, then the python package `pint` will be used to parse the unit string and convert it to a format which MathJax can typeset. In most cases, this will result in an almost identical output visually.
 
 ## Quirks
 

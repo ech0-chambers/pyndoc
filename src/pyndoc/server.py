@@ -232,7 +232,7 @@ handlers = {
 
 def handle_client(connection: socket.socket, listening: threading) -> None:
     """Handles communication with a connected client."""
-    data: bytes = connection.recv(4096)
+    data: bytes = connection.recv(16384)
     if not data:
         return False
     try:

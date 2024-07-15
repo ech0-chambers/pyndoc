@@ -574,7 +574,10 @@ def convert_from_string(
     text: str, preprocess: bool = False, format: Optional[str] = 'panflute'
 ) -> str | list[pf.Element]:
     if preprocess:
-        text = preprocess_text(text)
+        if format != "panflute":
+            text = preprocess_text(text, target_format = format)
+        else:
+            text = preprocess_text(text)
     filter_file = Path(__file__).parent / "filter.py"
     if not filter_file.exists():
         raise FileNotFoundError(f"Filter file not found: {filter_file}")

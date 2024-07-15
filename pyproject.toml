@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyndoc"
+version = "0.1.4"
+authors = [
+    {name = "Peter Brookes Chambers"}
+]
+description = "A standalone Pandoc filter and optional preprocessor to include arbitrary Python code in Markdown documents, ran at build time."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "panflute",
+    "pyyaml",
+    "pint"
+]
+
+[project.urls]
+Homepage = "https://github.com/ech0-chambers/pyndoc"
+
+[project.scripts]
+pyndoc = "pyndoc.__main__:main"
+
+[tool.setuptools]
+packages = ["pyndoc"]
+package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+pyndoc = ["filter.py"]

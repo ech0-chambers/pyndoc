@@ -8,7 +8,7 @@ import time
 from typing import Dict
 
 HOST = "127.0.0.1"
-MESSAGE_SIZE = 4096
+MESSAGE_SIZE = 16384
 METADATA_FILE = Path(".pyndoc.json")
 
 def send_request(connection: socket.socket, message: str | Dict, message_type: str) -> None:

@@ -23,6 +23,15 @@ def start_logging(logging_level: str | None = None):
     logging.debug("Created log file from __main__.py")
 
 
+def check_filter_executable(filter_file: Path):
+    # if we're on linux, check if the filter has execute permissions
+    if sys.platform == "linux":
+        if not filter_file.is_file():
+            raise FileNotFoundError("Filter file not found.")
+        if not filter_file.stat().st_mode & 0o111:
+            filter_file.chmod(0o755)
+
+
 def get_arg(
     args: list[str], arg: str | list[str], remove: bool = False, is_flag=False
 ) -> str | bool | None:
@@ -240,13 +249,15 @@ def main():
     logging_level = get_arg(args, ("--log-level"), remove=True)
     start_logging(logging_level)
 
+    target_format = get_format(args)
+
     if to_preprocess:
         logging.info("Preprocessing file.")
         start_time = time.perf_counter_ns()
         target_file = Path(args[-1])
         with target_file.open("r") as f:
             contents = f.read()
-        contents = preprocess(contents)
+        contents = preprocess(contents, target_format=target_format)
         temp_file = target_file.parent / (
             target_file.stem + "_tmp" + target_file.suffix
         )
@@ -259,6 +270,8 @@ def main():
             # print(contents)
             return
 
+    check_filter_executable(Path(__file__).parent / "filter.py")
+
     # add the filter to the filters list
     filter_file = Path(__file__).parent / "filter.py"
     current_filters = get_arg(args, ("--filter", "-F"))
@@ -269,7 +282,6 @@ def main():
     else:
         args.append(f"--filter={filter_file}")
 
-    target_format = get_format(args)
     start_time = time.perf_counter_ns()
     logging.debug("Getting or starting server.")
     port = get_or_start_server()

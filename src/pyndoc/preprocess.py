@@ -417,7 +417,7 @@ def read_pyndoc_raw_macro(contents: str, start: int, macro_name: str, is_double:
     while next_char == "{" and i < len(contents) - 1:
         next_char = contents[i + 1]
         is_raw = next_char == "{"
-        arg_end = find_matching_bracket(contents, i, strict =- True, is_double = is_raw)
+        arg_end = find_matching_bracket(contents, i, strict = False, is_double = is_raw)
         arg = contents[i + 1 : arg_end]
         if is_raw:
             arg = arg[1:-1]
@@ -552,7 +552,26 @@ def read_pyndoc_md_file(contents: str, start: int, target_format: str) -> tuple[
     filename = filename.replace("{format}", target_format)
     file_path = Path(filename)
     if not file_path.exists():
-        throw_parsing_error(contents, start, f"File {filename} does not exist", length = skip)
+
+        if not file_path.is_absolute():
+            # if the file doesn't exist, check its parents up to the base directory until we find a directory which does exist
+            base_dir = Path.cwd()
+            current_path = file_path
+            while not current_path.exists() and current_path != base_dir:
+                current_path = current_path.parent
+            
+            if current_path == base_dir:
+                throw_parsing_error(contents, start, f"File {filename} does not exist", length = skip)
+            else:
+                if current_path == file_path.parent:
+                    # the file's parent exists, but the file doesn't
+                    files = ", ".join([f.name for f in current_path.iterdir() if f.is_file()])
+                    throw_parsing_error(contents, start, f"File {filename} does not exist, but its parent directory does. Files in {current_path}: {files}", length = skip)
+                else:
+                    # file was in a subdirectory which doesn't exist
+                    dirs = ", ".join([d.name for d in current_path.iterdir() if d.is_dir()])
+                    throw_parsing_error(contents, start, f"File {filename} does not exist. Parent directories down to {current_path} exist. Directories in {current_path}: {dirs}", length = skip)
+        
     with file_path.open("r") as f:
         file_contents = f.read()
     file_contents = preprocess(file_contents, target_format)

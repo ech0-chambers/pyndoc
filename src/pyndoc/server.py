@@ -178,6 +178,7 @@ def shutdown_handler(connection: socket.socket, message: Dict) -> bool:
 
 def string_handler(connection: socket.socket, message: Dict) -> bool:
     """Handles a string request from the client."""
+    logging.debug("Received string request:\n" + message['message'])
     try:
         # Yes, this is supremely stupid, but should only ever be connected to from the local machine anyway.
         output = capture_output(message['message'])
@@ -197,10 +198,12 @@ def object_handler(connection: socket.socket, message: Dict) -> bool:
         return True
     if isinstance(output, panflute.Element):
         output = output.to_json()
-        logging.debug(f"Output: \n{json.dumps(output, indent = 2)}")
+        logging.debug("Received object request:\n" + message['message'])
+        logging.debug(f"Output here: \n{json.dumps(output, indent = 2)}")
     elif isinstance(output, list) and len(output) == 1 and isinstance(output[0], panflute.Element):
         output = output[0].to_json()
-        logging.debug(f"Output: \n{json.dumps(output, indent = 2)}")
+        logging.debug("Received object request:\n" + message['message'])
+        logging.debug(f"Output here: \n{json.dumps(output, indent = 2)}")
     else:
         raise ValueError(f"Unsupported object type: {type(output)}")
     send_response(connection, output, 'object')
@@ -208,6 +211,7 @@ def object_handler(connection: socket.socket, message: Dict) -> bool:
 
 def file_handler(connection: socket.socket, message: Dict) -> bool:
     """Handles a file request from the client. The file is read and the contents executed."""
+    logging.debug("Received file request:\n" + message['message'])
     try:
         with open(message['message'], 'r') as f:
             code = f.read()
@@ -237,6 +241,7 @@ def handle_client(connection: socket.socket, listening: threading) -> None:
         return False
     try:
         message: Dict[str, str] = json.loads(data.decode('utf-8'))
+        logging.debug(f"Received message of type: {message['type']}")
         continue_listening = handlers[message['type']](connection, message)
     except json.JSONDecodeError:
         send_response(connection, "Invalid JSON", "error")
@@ -285,8 +290,8 @@ def main() -> None:
 
                     # Create a new thread to handle the client
                     client_thread = threading.Thread(target=handle_client, args=(conn,listening))
+                    logging.info(f"Starting new thread to handle client from {addr}")
                     client_thread.start()  
-                    logging.info(f"Started new thread to handle client from {addr}")
                     timeouts = MAX_TIMEOUT / time_per_request
                 except socket.timeout:
                     timeouts -= 1

@@ -287,6 +287,13 @@ class Expression(Token, ABC):
             value = float(value)
             if value.is_integer():
                 value = int(value)
+        elif isinstance(value, str):
+            try:
+                value = float(value)
+                if value.is_integer():
+                    value = int(value)
+            except ValueError:
+                pass
         self.value = value
 
     def __call__(self, format: str = None, unit: str = None) -> str:

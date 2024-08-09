@@ -1,5 +1,6 @@
 from enum import Enum, auto
 from pathlib import Path
+import subprocess
 from typing import Any, List, Optional
 import panflute as pf
 import logging
@@ -589,7 +590,7 @@ def convert_from_string(
         output_format = format,
     )
     # output = pf.convert_text(text, input_format="markdown", standalone = False)
-    logging.debug(f"Output: {output}")
+    logging.debug(f"Output from markdown conversion: {output}")
     return output
 
 

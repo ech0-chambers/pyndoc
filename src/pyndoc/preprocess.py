@@ -4,7 +4,7 @@ from pathlib import Path
 import re
 import logging
 import sys
-from typing import Optional
+from typing import List, Optional
 from .formats import Format
 
 TARGET_FORMAT = None
@@ -75,7 +75,12 @@ def throw_parsing_error(contents: str, start: int, message: str, length: int = 1
 
     p = Panel(g, title = "Preprocessor parsing error")
     rprint(p)
-    raise Exception(f"Preprocessor parsing error at line {error_line_number}: {message}.")
+
+    simple_text = contents.split("\n")[error_line_number - 2:error_line_number + 1]
+    simple_text += [" " * error_column_number + "^" * length]
+    simple_text += contents.split("\n")[error_line_number + 1:error_line_number + 3]
+    simple_text = ">   " + "\n>   ".join(simple_text)
+    raise Exception(f"Preprocessor parsing error at line {error_line_number}: {message}:\n\n" + simple_text)
 
 
 def read_code(contents: str, start: int) -> tuple[int, str]:
@@ -607,15 +612,37 @@ def read_pyndoc_conditional_md_file(contents: str, start: int, target_format: st
             return skip, file_contents
     return skip, ""
 
+CHUNK_SIZES = [10_000, 5000, 2000, 1000, 500, 250, 100]
+
+def contains_any(string: str, tests: List[str]) -> bool:
+    for test in tests:
+        if test in string: return True
+    return False
+
 def preprocess(contents: str, target_format: str | None = None) -> str:
     new_text = StringIO()
     i = 0
-    while i < len(contents):
-        next_char = contents[i + 1] if i + 1 < len(contents) else None
+    len_contents = len(contents)
+    check_chunks_idx = 0
+    while i < len_contents:
+        cont = False
+        for CHUNK_SIZE in CHUNK_SIZES[check_chunks_idx:]:
+            if i + CHUNK_SIZE < len_contents:
+                if not contains_any(contents[i: i + CHUNK_SIZE], ["%", "<!--", '"', "'", "\\", "$"]):
+                    new_text.write(contents[i:i + CHUNK_SIZE])
+                    i += CHUNK_SIZE
+                    cont = True
+                    break
+            else:
+                check_chunks_idx += 1
+
+        if cont:
+            continue
+        next_char = contents[i + 1] if i + 1 < len_contents else None
         c = contents[i]
         if contents[i:].startswith("<!--"):
             # this is the start of a comment. Skip until the end of the comment
-            while not contents[i:].startswith("-->") and i < len(contents):
+            while not contents[i:].startswith("-->") and i < len_contents:
                 i += 1
             i += 3
             continue

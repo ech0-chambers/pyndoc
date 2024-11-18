@@ -69,7 +69,7 @@ The preprocessor also allows for format specifiers, such as `%var:.2f` or `%func
 
 #### Including Files
 
-Python files and markdown files can be included with `%%%py{file_path}` and `%%%md{file_path}` respectively. The path is relative to the current working directory. For markdown files, the file is preprocessed, then included prior to the call to pandoc -- this means it is identical to directly including the file's content in the original document. Additionally, markdown files can be included conditionally based on the target format. This is achieved with the `%%%mdifformat` command.The syntax is as follows:
+Python files and markdown files can be included with `%%%py{file_path}` and `%%%md{file_path}` respectively. The path is relative to the current working directory. For markdown files, the file is preprocessed, then included prior to the call to pandoc -- this means it is identical to directly including the file's content in the original document. Additionally, markdown files can be included conditionally based on the target format. This is achieved with the `%%%mdifformat` command. The syntax is as follows:
 
 ```markdown
 %%%mdifformat{

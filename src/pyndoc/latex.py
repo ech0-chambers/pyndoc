@@ -1,30 +1,173 @@
 from abc import ABC, abstractmethod
-import re
-from typing import Any, Dict, List, Tuple
+from typing import List, Optional, Set, Tuple, Dict, Any
 import pint
+import math
+import re
 
 ureg = pint.UnitRegistry()
 ureg.define("electronvolt = 1.602176634e-19 * joules = eV")
+ureg.define("clight = 299792458 * m/s = c")
+ureg.define("year = 365.25 * day = yr")
 
-TARGET_FORMAT = None
+__default_preferred_units = [
+    ureg.meter,
+    ureg.second,
+    ureg.kilogram,
+    ureg.ampere,
+    ureg.kelvin,
+    ureg.mole,
+    ureg.candela,
+    ureg.radian,
+    ureg.joule,
+    ureg.watt,
+    ureg.tesla,
+    ureg.hertz,
+    ureg.newton
+]
+
+ureg.default_preferred_units = __default_preferred_units
+
+DEFAULT_FORMAT = ".4g"
+MULTIPLICATION_OPERATOR = "\\times"
+AUTO_TRUNCATE_LENGTH = 6
+USE_SIUNITX = False
+USE_EXP_FOR_EXPONENTIAL = False
+USE_ARC_FOR_INVERSE_TRIG = False
 
 
-
-@pint.register_unit_format("Ls")
+@pint.register_unit_format("T")
 def format_unit_simple(unit, registry, **options):
-    return "\\ " + "\\,".join(f"\\mathrm{{{u}}}{('^{' + str(int(p)) + '}') if p != 1 else ''}" for u, p in unit.items())
+    out = []
+    for u, p in unit.items():
+        u = f"{ureg.parse_units(u):~}"
+        u = u.replace("%", "\\%").replace("°", "^{\\circ}").replace("deg", "^{\\circ}").replace("μ", "\\mu")
+        if p != 1:
+            p = str(int(p)) if float(p).is_integer() else str(float(p))
+            out.append(f"\\mathrm{{{u}}}^{{{p}}}")
+        else:
+            out.append(f"\\mathrm{{{u}}}")
+    return "\\,".join(out)
 
-def format_si_unit(units: str, html: bool = False) -> str:
-    if html:
-        output = f"{ureg.parse_expression(units).units:~Hs}"
-        # output = re.sub(r"\bdeg\b", "&deg;", output)
-        output = output.replace("deg", "&deg;")
-        return output
-    output = f"{ureg.parse_expression(units).units:~Ls}"
-    output = re.sub(r"\bdeg\b", r"^{\\circ}", output)
-    return output
 
-prefixes = [
+class Token(ABC):
+    @abstractmethod
+    def __str__(self) -> str:
+        pass
+
+    def __add__(self, other: "Token") -> "Addition":
+        return Addition(self, other)
+
+    def __radd__(self, other: "Token") -> "Addition":
+        return Addition(other, self)
+
+    def __sub__(self, other: "Token") -> "Subtraction":
+        return Subtraction(self, other)
+
+    def __rsub__(self, other: "Token") -> "Subtraction":
+        return Subtraction(other, self)
+
+    def __mul__(self, other: "Token") -> "Multiplication":
+        return Multiplication(self, other)
+
+    def __rmul__(self, other: "Token") -> "Multiplication":
+        return Multiplication(other, self)
+
+    # We'll use __matmul__ and __rmatmul__ for explicit multiplication
+
+    def __matmul__(self, other: "Token") -> "Times":
+        return Times(self, other)
+
+    def __rmatmul__(self, other: "Token") -> "Times":
+        return Times(other, self)
+
+    def __div__(self, other: "Token") -> "Division":
+        return Division(self, other)
+
+    def __rdiv__(self, other: "Token") -> "Division":
+        return Division(other, self)
+
+    def __truediv__(self, other: "Token") -> "Division":
+        return Division(self, other)
+
+    def __rtruediv__(self, other: "Token") -> "Division":
+        return Division(other, self)
+
+    def __pow__(self, other: "Token") -> "Power":
+        return Power(self, other)
+
+    def __rpow__(self, other: "Token") -> "Power":
+        return Power(other, self)
+
+    def __getitem__(self, other: "Token") -> "Index":
+        return Index(self, other)
+
+    def __and__(self, other: "Token") -> "Concatenation":
+        return Concatenation(self, other)
+
+    def __rand__(self, other: "Token") -> "Concatenation":
+        return Concatenation(other, self)
+
+    def __neg__(self) -> "Negation":
+        return Negation(self)
+
+    def __pos__(self) -> "Positive":
+        return Positive(self)
+
+    def __hash__(self) -> int:
+        return hash(str(self))
+
+    def __eq__(self, other: Any) -> "Equality":
+        return Equality(self, other)
+
+    def __lt__(self, other: Any) -> "LessThan":
+        return LessThan(self, other)
+
+    def __gt__(self, other: Any) -> "GreaterThan":
+        return GreaterThan(self, other)
+
+    def __le__(self, other: Any) -> "LessThanOrEqual":
+        return LessThanOrEqual(self, other)
+
+    def __ge__(self, other: Any) -> "GreaterThanOrEqual":
+        return GreaterThanOrEqual(self, other)
+
+    def __ne__(self, other: Any) -> "NotEqual":
+        return NotEqual(self, other)
+
+
+class Literal(Token):
+    def __init__(self, value: str | float) -> "Literal":
+        """Contains a string or float to handle its behaviour for typsetting.
+
+        Parameters
+        ----------
+        value : str | float
+            The value of the literal
+        """        
+        self.value = value
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+class DimensionedLiteral(Literal):
+    # differentiates from a regular Literal so that operators like Power can bracket appropriately.
+    def __init__(self, value: str | float) -> "DimensionedLiteral":
+        """Contains a string or float to handle its behaviour for typsetting. This differs from a Literal in that it is assumed to also contain units, and so some operators may treat it differently for bracketing purposes.
+
+        Parameters
+        ----------
+        value : str | float
+            The value of the literal
+        """        
+        super().__init__(value)
+
+class CallableToken(Token, ABC):
+    @abstractmethod
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        pass
+
+
+__unit_prefixes = [
     "quecto",
     "deca",
     "ronto",
@@ -51,285 +194,46 @@ prefixes = [
     "quetta",
 ]
 
-def siunit_html(units: str, inside_math: bool = False) -> str:
-    # We're receiving a string in the siunitx format, like "\centi\meter\per\second\squared"
-    # Need to transform into something like "centimeter per second squared"
-    # check for any prefixes and join them to the unit
-    # remove the backslashes
 
-    for prefix in prefixes:
-        units = re.sub(rf"\\{prefix}\\", prefix, units)
-    
-    # remove the backslashes
-    units = units.replace("\\", " ")
-    units = re.sub(r"\s+", " ", units)  # remove multiple spaces
-    if inside_math:
-        return format_si_unit(units)
-    return "\(" + format_si_unit(units) + "\)"
+def parse_unit(unit: pint.Unit | str) -> pint.Unit:
+    """Parses a unit string into a pint.Unit object. The unit string may be in siunitx syntax (`\meter\per\second\squared`), written fully (meter per second squared), or abbreviated (`m/s^2` or `m s^-2`).)
 
-MULTIPLICATION_OPERATOR = "\\times"
-AUTO_TRUNCATE_LENGTH = 6
+    Parameters
+    ----------
+    unit : pint.Unit | str
+        The unit to be parsed. This may be in siunitx format (e.g. `\meter\per\second\squared`), written fully (meter per second squared), or abbreviated (m/s^2 or m s^-2).
 
-class Token(ABC):
-    @abstractmethod
-    def __str__(self):
-        pass
+    Returns
+    -------
+    pint.Unit
+        The parsed unit object.
 
-    def __add__(self, other: Any) -> "Expression":
-        return Add(self, other)
-
-    def __radd__(self, other: Any) -> "Expression":
-        return Add(other, self)
-
-    def __sub__(self, other: Any) -> "Expression":
-        return Subtract(self, other)
-
-    def __rsub__(self, other: Any) -> "Expression":
-        return Subtract(other, self)
-
-    def __mul__(self, other: Any) -> "Expression":
-        return Multiply(self, other)
-
-    def __rmul__(self, other: Any) -> "Expression":
-        return Multiply(other, self)
-
-    def __pow__(self, other: Any) -> "Expression":
-        return Power(self, other)
-
-    def __rpow__(self, other: Any) -> "Expression":
-        return Power(other, self)
-
-    # Using @ for \times
-
-    def __matmul__(self, other: Any) -> "Expression":
-        return Times(self, other)
-
-    def __rmatmul__(self, other: Any) -> "Expression":
-        return Times(other, self)
-
-    def __getitem__(self, other: Any) -> "Expression":
-        """Using getitem to represent a subscript or index.
-
-        Parameters
-        ----------
-        other : Any
-            The subscript or index.
-
-        Returns
-        -------
-        Expression
-            The subscripted or indexed expression.
-        """
-        return Index(self, other)
-
-    def __div__(self, other: Any) -> "Expression":
-        return Divide(self, other)
-
-    def __rdiv__(self, other: Any) -> "Expression":
-        return Divide(other, self)
-
-    def __truediv__(self, other: Any) -> "Expression":
-        return Divide(self, other)
-
-    def __rtruediv__(self, other: Any) -> "Expression":
-        return Divide(other, self)
-
-    # use `a // b` to force display fraction
-
-    def __floordiv__(self, other: Any) -> "Expression":
-        """Using `//` to force a display mode fraction (\\dfrac{}{})
-        instead of an inline fraction (\\frac{}{}).
-
-        Parameters
-        ----------
-        other : Any
-            The denominator.
-
-        Returns
-        -------
-        Expression
-            The fraction.
-        """
-        return Divide(self, other, display=True)
-
-    def __rfloordiv__(self, other: Any) -> "Expression":
-        return Divide(other, self, display=True)
-
-    def __pos__(self) -> "Expression":
-        return Positive(self)
-
-    def __neg__(self) -> "Expression":
-        return Negative(self)
-
-    def __eq__(self, other: Any) -> "Expression":
-        return Equation(self, other)
-
-    def __lt__(self, other: Any) -> "Expression":
-        return LessThan(self, other)
-
-    def __le__(self, other: Any) -> "Expression":
-        return LessThanOrEqual(self, other)
-
-    def __gt__(self, other: Any) -> "Expression":
-        return GreaterThan(self, other)
-
-    def __ge__(self, other: Any) -> "Expression":
-        return GreaterThanOrEqual(self, other)
-
-    def __ne__(self, other: Any) -> "Expression":
-        return NotEqual(self, other)
-
-    # Since we're using + as the binary plus operator even for strings, we'll use the bitwise `and` operator for concatenation. This should be unlikely to cause any issues in normal use.
-
-    def __and__(self, other: Any) -> str:
-        """Using `&` to concatenate two expressions, since `+` is used for addition.
-
-        Parameters
-        ----------
-        other : Any
-            The other expression to concatenate.
-
-        Returns
-        -------
-        str
-            The concatenated expression. Note this is no longer an Expression object.
-        """
-        return f"{self} {other}"
-
-    def __rand__(self, other: Any) -> str:
-        return f"{other} {self}"
-
-    def __hash__(self) -> int:
-        return hash(str(self))
-
-    @abstractmethod
-    def __call__():
-        pass
-
-class NonCallableToken(Token):
-    def __call__(self) -> str:
-        return str(self)
-
-class Literal(Token):
-    def __init__(self, expr: Any):
-        self.expr = expr
-
-    def __str__(self) -> str:
-        return str(self.expr)
-
-    def __call__(self) -> str:
-        return self.expr
+    Raises
+    ------
+    TypeError
+        If the unit is not a pint.Unit or str.
+    """    
+    if isinstance(unit, pint.Unit):
+        return unit
+    if not isinstance(unit, str):
+        raise TypeError(f"Expected pint.Unit or str, got {type(unit)}")
+    # unit could be in siunitx format. Check for backslashes:
+    if "\\" in unit:
+        # this is (probably) a siunitx unit
+        # pint expects centimeter, we will receive \centi\meter
+        # replace \{prefix}\{unit} with {prefix}{unit}
+        # replace backslash with space
+        # check if it starts with "per " -- we need to handle this separately
+        for prefix in __unit_prefixes:
+            unit = re.sub(rf"\\{prefix}\s*\\", prefix, unit)
+        unit = unit.replace("\\", " ")
+        if unit.startswith("per "):
+            unit = unit[4:]
+            return 1 / ureg.parse_units(unit)
+        return ureg.parse_units(unit)
+    return ureg.parse_units(unit)
 
 
-failed_conversion = Literal(r"\text{\color{red}None}")
-
-html_output_formats = [
-    "html",
-    "chunkedhtml",
-    "html5",
-    "html4",
-    "slideous",
-    "slidy",
-    "dzslides",
-    "revealjs",
-    "s5"
-]
-
-latex_output_formats = [
-    "latex",
-    "beamer",
-]
-
-def format_value(value: float | None, fmt: str | None, unit: str | None) -> str:
-    if value is None:
-        return failed_conversion
-    if fmt is None:
-        print_value = str(value)
-        if AUTO_TRUNCATE_LENGTH > 0 and "." in print_value and len(print_value.split(".")[1]) > AUTO_TRUNCATE_LENGTH:
-            # assume this is a floating point rounding error and truncate, then strip trailing zeros
-            integer, decimal = print_value.split(".")
-            decimal = decimal[:6]
-            decimal = decimal.rstrip("0")
-            print_value = f"{integer}.{decimal}"
-            print_value = print_value.rstrip(".") # if the decimal is empty, remove the dot
-        if unit is None:
-            return Literal(print_value)
-        if TARGET_FORMAT.name.lower() in latex_output_formats:
-            return Macro("SI", print_value, unit)
-        if TARGET_FORMAT.name.lower() in html_output_formats:
-            unit = siunit_html(unit, True)
-            return f"{print_value} {unit}"
-        return f"{print_value} {unit}"
-    latex = False
-    if "el" in fmt.lower() and unit is None:
-        latex = True
-        fmt = fmt.lower().replace("el", "e")
-    if "e" in fmt.lower() and TARGET_FORMAT.name.lower() not in latex_output_formats:
-        latex = True
-    print_value = f"{value:{fmt}}"
-    if latex:
-        left, right = print_value.lower().split("e")
-        right = str(int(right)) # remove leading zeros and + sign
-        print_value = f"{left} \\times 10^{{{right}}}"
-    if unit is None:
-        return Literal(print_value)
-    if TARGET_FORMAT.name.lower() in ["latex", "beamer"]:
-        return Macro("SI", print_value, unit)
-    if TARGET_FORMAT.name.lower() in html_output_formats:
-        unit = siunit_html(unit, True)
-        return f"{print_value} {unit}"
-    return f"{print_value} {unit}"
-
-
-class Expression(Token, ABC):
-    def __init__(self, value: Any = None):
-        if isinstance(value, Expression):
-            value = float(value)
-            if value.is_integer():
-                value = int(value)
-        elif isinstance(value, str):
-            try:
-                value = float(value)
-                if value.is_integer():
-                    value = int(value)
-            except ValueError:
-                pass
-        self.value = value
-
-    def __call__(self, format: str = None, unit: str = None) -> str:
-        return format_value(self.value, format, unit)
-
-    def __str__(self) -> str:
-        return str(self.value)
-    
-    def __float__(self) -> float | None:
-        # I'm not sure if we should be returning None here or not, but it should throw an error if it's used in a context where a float is expected. This is probably a good thing?
-        if self.value is None:
-            return None
-        if isinstance(self.value, int):
-            return float(self.value)
-        if isinstance(self.value, float):
-            return self.value
-        try:
-            return float(str(self.value))
-        except ValueError:
-            return None
-        
-    def __int__(self) -> int:
-        value = self.__float__()
-        if value is None:
-            return None
-        return int(value)
-
-
-class Variable(Expression):
-    def __init__(self, identifier: str, value: Any = None):
-        super().__init__(value)
-        self.identifier = identifier
-
-    def __str__(self) -> str:
-        return self.identifier
-    
 class Argument:
     def __init__(
         self,
@@ -337,6 +241,17 @@ class Argument:
         is_optional: bool = False,
         in_expl3: bool = False,
     ):
+        """An argument to a macro or environment.
+
+        Parameters
+        ----------
+        arg : str | Token | Dict[str, Any]
+            The argument to the macro or environment. This can be a dictionary of key-value pairs, in which case they will be formatted as key=value. Nested dictionaries are not currently supported.
+        is_optional : bool, optional
+            If True, the argument will be rendered as optional, using square brackets instead of braces. Default False
+        in_expl3 : bool, optional
+            If True, the contents of the argument will be prepared to be used in expl3 (LaTeX3) syntax, with spaces being replaced by `~`. Default False
+        """        
         self.arg = arg
         self.optional = is_optional
         self.in_expl3 = in_expl3
@@ -359,8 +274,19 @@ class Argument:
         return f"{open_delim}{arg}{close_delim}"
 
 
-class Macro(NonCallableToken):
-    def __init__(self, name: str, *arguments, in_expl3: bool = False):
+class Macro(Token):
+    def __init__(self, name: str, *arguments: str | Tuple[str, bool] | Argument, in_expl3: bool = False):
+        """A LaTeX macro, optionally with arguments.
+
+        Parameters
+        ----------
+        name : str
+            The name of the macro. For example, `Macro("LaTeX")` would render as `\LaTeX`.
+        arguments : Tuple[Argument]
+            A number of arguments for the macro. If a string, this will be converted to an `Argument` object. If a tuple, the first element should be the argument, and the second a boolean indicating whether it is optional. If an `Argument` object, it will be used as is.
+        in_expl3 : bool, optional
+            If True, the contents of any arguments will be prepared to be used in expl3 (LaTeX3) syntax, with spaces being replaced by `~`. Default False
+        """        
         self.name = name
         self.arguments = arguments
         self.in_expl3 = in_expl3
@@ -377,14 +303,27 @@ class Macro(NonCallableToken):
         return out
 
 
-class Environment(NonCallableToken):
+class Environment(Token):
     def __init__(
         self,
         name: str,
-        *arguments,
+        *arguments: str | Tuple[str, bool] | Argument,
         content: str | Token | List[Token] = None,
         in_expl3: bool = False,
     ):
+        r"""A LaTeX environment, optionally with arguments.
+
+        Parameters
+        ----------
+        name : str
+            The name of the environment. For example, `Environment("document", "content")` would render as `\begin{document} content \end{document}`.
+        arguments : str | Tuple[str, bool] | Argument, optional
+            A number of arguments for the environment. If a string, this will be converted to an `Argument` object. If a tuple, the first element should be the argument, and the second a boolean indicating whether it is optional. If an `Argument` object, it will be used as is. 
+        content : str | Token | List[Token], optional
+            The content of the environment. This can be a string, a single `Token` object, or a list of `Token` objects. If a list, the contents will be concatenated. Default None
+        in_expl3 : bool, optional
+            If True, the contents of any arguments will be prepared to be used in expl3 (LaTeX3) syntax, with spaces being replaced by `~`. Default False
+        """        
         self.name = name
         self.arguments = arguments
         self.content = content
@@ -402,447 +341,1782 @@ class Environment(NonCallableToken):
         return out
 
 
-class _Container(Expression):
-    def __init__(self, *children: str | Token):
-        if not isinstance(children, (list, tuple)):
-            children = [children]
-        else:
-            # Flatten nested lists if there's only one item
-            while len(children) == 1 and isinstance(children[0], (list, tuple)):
-                children = children[0]
-        children = [
-            (
-                expr
-                if isinstance(expr, Token)
-                else (
-                    _Container(expr)
-                    if isinstance(expr, (list, tuple))
-                    else Literal(expr)
-                )
-            )
-            for expr in children
-        ]
-        self.children = children
-        if len(children) == 1:
-            self.value = children[0].value
-        else:
-            self.value = None # We set this to None because the `value` could be ambiguous
-
-    def __str__(self) -> str:
-        return "".join([str(child) for child in self.children])
-
-    def __getitem__(self, index: int) -> Expression:
-        return self.children[index]
-    
-    def __call__(self, format: str = None, unit: str = None) -> str:
-        return None
-
-class Sequence(_Container):
-    def __init__(self, *children: str | Token):
-        super().__init__(*children)
-
-    def __str__(self) -> str:
-        return ", ".join([str(child) for child in self.children])
-
-    def __getitem__(self, index: int) -> Token:
-        return self.children[index]
-
-class Bracket(_Container):
-    def __init__(
-        self, children: str | Token | List[Token], scale: bool = False
-    ):
-        super().__init__(children)
-        self.left_delim = "("
-        self.right_delim = ")"
-        self.scale = scale
-
-    def __str__(self) -> str:
-        scale_left, scale_right = "\\left", "\\right"
-        return f"{scale_left if self.scale else ''}{self.left_delim}{super().__str__()}{scale_right if self.scale else ''}{self.right_delim}"
-
-
-class SquareBracket(Bracket):
-    def __init__(self, children: str | Token | List[Token], scale: bool = False):
-        super().__init__(children, scale)
-        self.left_delim = "["
-        self.right_delim = "]"
-
-
-class CurlyBracket(Bracket):
-    def __init__(self, children: str | Token | List[Token], scale: bool = False):
-        super().__init__(children, scale)
-        self.left_delim = "\\lbrace"
-        self.right_delim = "\\rbrace"
-
-
-class AngleBracket(Bracket):
-    def __init__(self, children: str | Token | List[Token], scale: bool = False):
-        super().__init__(children, scale)
-        self.left_delim = "\\langle"
-        self.right_delim = "\\rangle"
-
-
-class Absolute(Bracket):
-    def __init__(self, children: str | Token | List[Token], scale: bool = False):
-        super().__init__(children, scale)
-        self.left_delim = "\\lvert"
-        self.right_delim = "\\rvert"
-
-    def __float__(self):
-        if len(self.children) != 1:
-            return None
-        return abs(float(self.children[0]))
-
-    def __int__(self):
-        if len(self.children) != 1:
-            return None
-        return abs(int(self.children[0]))
-    
-    def __call__(self, format: str | None = None, unit: str | None = None, show_brackets: bool = False):
-        if len(self.children) != 1:
-            return failed_conversion
-        child = self.children[0]
-        if show_brackets:
-            return f"\\left|{child(format, unit)}\\right|"
-        if float(child) is None:
-            return failed_conversion
-        child_value = abs(float(child))
-        return var("", child_value)(format, unit)
-
-
-class _UnaryOperator(Expression):
-    def __init__(self, operator: str, operand: Token, group: bool = False):
-        self.operator = operator
-        self.operand = operand
-        self.group = group
-
-    def __str__(self) -> str:
-        if self.group:
-            return f"{self.operator}{{{self.operand}}}"
-        return f"{self.operator}{self.operand}"
-    
-    def get_value(self) -> Any | None:
-        if self.operand.value is None:
-            return None
-        value = (
-            self.operand.value.expr
-            if isinstance(self.operand.value, Literal)
-            else self.operand.value
-        )
-        if isinstance(value, str):
-            try:
-                value = float(value)
-            except ValueError:
-                return None
-        if not isinstance(value, (float, int)):
-            return None
-    
-        if not isinstance(value, int) and value.is_integer():
-            value = int(value)
-
-        return value
-    
-    def calc_value(self):
-        return None # should be implemented in subclasses
-
-class Positive(_UnaryOperator):
-    def __init__(self, operand: Token):
-        super().__init__("+", operand)
-        self.value = self.calc_value()
-
-    def calc_value(self) -> Any:
-        # should this return abs? or should it just return the value?
-        value = self.get_value()
-        if value is None:
-            return None
-        return value
-
-    def __call__(self, format: str = None, unit: str = None) -> str:
-        value = self.calc_value()
-        return format_value(value, format, unit)
-    
-class Negative(_UnaryOperator):
-    def __init__(self, operand: Token):
-        super().__init__("-", operand)
-        self.value = self.calc_value()
-
-    def calc_value(self) -> Any:
-        value = self.get_value()
-        if value is None:
-            return None
-        return -value
-
-    def is_integer(self):
-        return float(self.operand).is_integer()
-
-    def __call__(self, format: str = None, unit: str = None) -> str:
-        value = self.calc_value()
-        return format_value(value, format, unit)
-    
-    def __float__(self):
-        value = self.calc_value()
-        if value is None:
-            return None
-        return float(value)
-
-class Subscript(_UnaryOperator):
-    def __init__(self, operand: Token):
-        super().__init__("_", operand, group = True)
-    
-    def calc_value(self) -> Any:
-        return None
-
-    def __call__(self, format: str = None, unit: str = None) -> Literal:
-        return Literal(f"{{}}_{{{self.operand(format, unit)}}}")
-    
-class Superscript(_UnaryOperator):
-    def __init__(self, operand: Token):
-        super().__init__("^", operand, group = True)
-    
-    def calc_value(self) -> Any:
-        return None
-
-    def __call__(self, format: str = None, unit: str = None) -> Literal:
-        return Literal(f"{{}}^{{{self.operand(format, unit)}}}")
-
-def as_expression(expr: Any) -> Expression:
-    if isinstance(expr, tuple):
-        if len(expr) == 1:
-            return Bracket(as_expression(expr[0]))
-        return Sequence([as_expression(ei) for ei in expr])
-    if isinstance(expr, list):
-        if len(expr) == 1:
-            return SquareBracket(as_expression(expr[0]))
-        return Sequence([as_expression(ei) for ei in expr])
-    if isinstance(expr, set):
-        if len(expr) == 1:
-            return CurlyBracket(as_expression(list(expr)[0]))
-        return Sequence([as_expression(ei) for ei in list(expr)])
-    if not isinstance(expr, Token):
-        if isinstance(expr, (float, int)):
-            value = expr
-        elif isinstance(expr, str):
-            try:
-                value = float(expr)
-            except ValueError:
-                value = expr
-        expr = Expression(value)
-    if not isinstance(expr, Expression):
-        expr = Expression(expr)
-    return expr
-
-
-class _BinaryOperator(Expression):
+class Quantity(CallableToken):
     def __init__(
         self,
-        operator: str,
-        left: Token | Any,
-        right: Token | Any,
-        group_left: bool = False,
-        group_right: bool = False,
-    ):
-        self.operator = operator
-        self.left = as_expression(left)
-        self.right = as_expression(right)
-        self.group_left = group_left
-        self.group_right = group_right
-        self.value = self.calc_value()
+        value: float,
+        fmt: Optional[str] = None,
+        unit: Optional[pint.Unit | str] = None,
+    ) -> "Quantity":
+        """A quantity with a value and unit.
 
-    def get_left_right_values(self) -> Tuple[Any, Any] | None:
-        if self.left.value is None or self.right.value is None:
-            return None, None
-        left_value = (
-            self.left.value.expr
-            if isinstance(self.left.value, Literal)
-            else self.left.value
-        )
-        right_value = (
-            self.right.value.expr
-            if isinstance(self.right.value, Literal)
-            else self.right.value
-        )
-        
-        if isinstance(left_value, (str, Expression)):
-            try:
-                left_value = float(left_value)
-            except ValueError:
-                return None, None
-        if isinstance(right_value, (str, Expression)):
-            try:
-                right_value = float(right_value)
-            except ValueError:
-                return None, None
-        
-        if isinstance(left_value, float) and left_value.is_integer():
-            left_value = int(left_value)
-        if isinstance(right_value, float) and right_value.is_integer():
-            right_value = int(right_value)
+        Parameters
+        ----------
+        value : float
+            The value of the quantity.
+        fmt : Optional[str], optional
+            The format to use when rendering the quantity. If `fmt = ''`, no format specifier will be used. If None, the default format will be used. Default None
+        unit : Optional[pint.Unit  |  str], optional
+            The unit of the quantity. This can be a pint.Unit object, a string in siunitx format (e.g. `\meter\per\second\squared`), written fully (meter per second squared), or abbreviated (m/s^2 or m s^-2). If None, the value will be assumed to be dimensionless, unless a unit is specified later. Default None
 
-        if not isinstance(left_value, (float, int)):
-            return None, None
-        if not isinstance(right_value, (float, int)):
-            return None, None
-        return left_value, right_value
+        Raises
+        ------
+        ValueError
+            If the value is a Token with a value that is a Token with a value that is a Token with a value... etc.
+        ValueError
+            If the value is a pint.Quantity (which already has a unit) and the unit is specified separately, but the units are incompatible.
+        """        
+        # this might not be necessary --  we'll see. We might need to track the
+        # initial value so that we can always access the magnitude in the
+        # original units.
+        i = 0
+        while isinstance(value, Token) and hasattr(value, "value") and i < 100: # this is a bit of a hack
+            value = value.value
+            i += 1
+        if i == 100:
+            raise ValueError("Encountered seemingly infinitely nested expressions when creating Quantity")
+        self._initial_value = value
+        self._initial_unit = unit
+        self.fmt = fmt
+        if self._initial_unit is not None:
+            self._unit = parse_unit(self._initial_unit)
+            if isinstance(self._initial_value, pint.Quantity):
+                try:
+                    self._value = self._initial_value.to(self._unit)
+                except pint.DimensionalityError:
+                    raise ValueError(f"Cannot convert {self._initial_value.units} to {self._unit}")
+            else:
+                # self._value = self._initial_value * self._unit
+                self._value = ureg.Quantity(self._initial_value, self._unit)
+        elif isinstance(self._initial_value, pint.Quantity):
+            self._initial_value = self._initial_value.to_preferred()
+            self._unit = self._initial_value.units
+            self._value = self._initial_value
+        else:
+            self._unit = None
+            self._value = self._initial_value
 
-    def calc_value(self) -> Any:
-        return None  # should be implemented in subclasses
+    @property
+    def value(self) -> pint.Quantity:
+        return self._value
+
+    @property
+    def unit(self) -> pint.Unit:
+        return self._unit
+    
+    @unit.setter
+    def unit(self, unit: pint.Unit | str):
+        if self._unit is None:
+            self._unit = parse_unit(unit)
+            self.value.unit = self._unit
+            return
+        try:
+            self._value = self._value.to(parse_unit(unit))
+            self._unit = self._value.units
+        except pint.DimensionalityError:
+            raise ValueError(f"Cannot convert {self._unit} to {unit}")
+        # Otherwise, units are the same so we don't need to do anything
+    
+    @value.setter
+    def value(self, value: float | pint.Quantity):
+        if isinstance(value, pint.Quantity):
+            self._unit = value.units
+            self._value = value
+            return
+        self._initial_value = value
+        if self._unit is not None:
+            # self._value = value * self._unit
+            self._value = ureg.Quantity(value, self._unit)
+        else:
+            self._value = value
+    
+    @property
+    def fmt(self) -> str:
+        return self._fmt
+    
+    @fmt.setter
+    def fmt(self, fmt: str):
+        self._fmt = fmt
+
+    def __call__(
+        self, fmt: Optional[str] = None, unit: Optional[pint.Unit | str] = None
+    ) -> Literal:
+        """Returns a Token representing the quantity, formatted as specified.
+
+        Parameters
+        ----------
+        fmt : Optional[str], optional
+            The format specifier to use when rendering the quantity. If None, the format specifier provided when the Quantity was created will be used. If that is also None, the default format specifier will be used. If `fmt = ''`, no format specifier will be used. Default None
+        unit : Optional[pint.Unit  |  str], optional
+            The unit to use when rendering the quantity. This can be a pint.Unit object, a string in siunitx format (e.g. `\meter\per\second\squared`), written fully (meter per second squared), or abbreviated (m/s^2 or m s^-2). If this unit is provided and the Quantity was created with a unit, the Quantity will be converted to this unit if possible. If None, the Quantity will be rendered in its current unit. If `unit = ''`, the Quantity will be rendered without a unit. Default None
+
+        Returns
+        -------
+        Literal
+            A Literal object containing the formatted quantity.
+        """        
+        # return Literal(f"{self.value}")  # TODO: this is a placeholder
+        if fmt is None:
+            fmt = self.fmt
+        if unit is None:
+            unit = self._unit
+        print_value, has_units = format_value(self.value, fmt, unit)
+        if has_units:
+            return DimensionedLiteral(print_value)
+        return Literal(print_value)
 
     def __str__(self) -> str:
-        left = f"{{{self.left}}}" if self.group_left else str(self.left)
-        right = f"{{{self.right}}}" if self.group_right else str(self.right)
-        return f"{left} {self.operator} {right}".replace("  ", " ")
+        return self.__call__().__str__()
+
+    def __float__(self) -> float:
+        value = self.value
+        if isinstance(value, pint.Quantity):
+            return float(value.magnitude)
+        return float(self.value)
+    
+    def __int__(self) -> int:
+        value = self.value
+        if isinstance(value, pint.Quantity):
+            return int(value.magnitude) 
+        return int(self.value)
 
 
-class Add(_BinaryOperator):
-    def __init__(self, left: Token, right: Token):
-        super().__init__("+", left, right)
+def format_value(
+    value: float | pint.Quantity,
+    fmt: Optional[str] = None,
+    unit: Optional[pint.Unit | str] = None,
+) -> Tuple[str, bool]:
+    """Formats a value with an optional unit.
 
-    def calc_value(self) -> Any:
-        left, right = self.get_left_right_values()
-        if left is None or right is None:
-            return None
-        return left + right
+    Parameters
+    ----------
+    value : float | pint.Quantity
+        The value to be formatted.
+    fmt : Optional[str], optional
+        The format specifier to use when rendering the value. If None, the default format specifier will be used. If `fmt = ''`, no format specifier will be used. Default None
+    unit : Optional[pint.Unit  |  str], optional
+        The unit to use when rendering the value. This can be a pint.Unit object, a string in siunitx format (e.g. `\meter\per\second\squared`), written fully (meter per second squared), or abbreviated (m/s^2 or m s^-2). If None, the value will be assumed to be dimensionless. If `unit = ''`, the value will be rendered without a unit. Default None
+
+    Returns
+    -------
+    Tuple[str, bool]
+        A tuple containing the formatted value and a boolean indicating whether the value has units.
+
+    Raises
+    ------
+    ValueError
+        If the unit is not a pint.Unit or str.
+    ValueError
+        If the unit is specified and the value is a pint.Quantity with units, but the units are incompatible.
+    """    
+    # unit = None -> use the unit of the value
+    # unit = "" -> no unit
+    # Returns the formatted value and whether or not it has units (for bracketing purposes)
+    if isinstance(value, pint.Quantity):
+        if unit is not None and unit != value.units and unit != "":
+            if value.dimensionless and not value.units == ureg.percent:
+                value = value * parse_unit(unit)
+            else:
+                try:
+                    value = value.to(parse_unit(unit))
+                except pint.DimensionalityError:
+                    raise ValueError(f"Cannot convert {value.units} to {unit}")
+        if unit == "":
+            value, unit = value.magnitude, None
+        else:
+            value, unit = value.magnitude, value.units
+    if isinstance(unit, str):
+        if unit == "":
+            unit = None
+        else:
+            try:
+                unit = parse_unit(unit)
+            except Exception:
+                raise ValueError(f"Invalid unit: {unit}")
+    if fmt is None:
+        fmt = DEFAULT_FORMAT
+    if fmt is not None:
+        # TODO: fractional format
+        print_value = f"{value:{fmt}}"
+    else:
+        print_value = f"{value}"
+    if "e" in print_value:
+        print_value, exponent = print_value.split("e")
+        exponent = str(int(exponent))
+    elif "E" in print_value:
+        print_value, exponent = print_value.split("E")
+        exponent = str(int(exponent))
+    else:
+        exponent = ""
+    if exponent == "0":
+        exponent = ""
+    if fmt is None or "." not in fmt:
+        print_value = __truncate_zeros(print_value)
+    if exponent:
+        if unit is None or unit.dimensionless and unit != ureg.percent:
+            return f"{print_value} \\times 10^{{{exponent}}}", False
+        return f"{print_value} \\times 10^{{{exponent}}}" + (
+            f"\\ {format_unit(unit, si = USE_SIUNITX)}" if unit else ""
+        ), True
+    if unit is None or unit.dimensionless and unit != ureg.percent:
+        return print_value, False
+    return print_value + (f"\\ {format_unit(unit, si = USE_SIUNITX)}" if unit else ""), True
+
+def si(value: float | pint.Quantity, fmt: Optional[str] = None, unit: Optional[pint.Unit | str] = None, in_math_mode: bool = False) -> str:
+    """Formats a value with SI units.
+
+    Parameters
+    ----------
+    value : float | pint.Quantity
+        The value to be formatted.
+    fmt : Optional[str], optional
+        The format specifier to use when rendering the value. If None, the default format specifier will be used. If `fmt = ''`, no format specifier will be used. Default None
+    unit : Optional[pint.Unit  |  str], optional
+        The unit to use when rendering the value. This can be a pint.Unit object, a string in siunitx format (e.g. `\meter\per\second\squared`), written fully (meter per second squared), or abbreviated (m/s^2 or m s^-2). If None, the value will be assumed to be dimensionless. If `unit = ''`, the value will be rendered without a unit. Default None
+    in_math_mode : bool, optional
+        If True, it is assumed that the function is called from inside math mode. If False, math mode delimiters (`$`) will be added. Default False    
+    
+    Returns
+    -------
+    str
+        The formatted value with SI units.
+    """    
+    if in_math_mode:
+        return format_value(value, fmt, unit)[0]
+    return "$" + format_value(value, fmt, unit)[0] + "$"
+
+def __truncate_zeros(value: str) -> str:
+    if "." in value:
+        integer, decimal = value.split(".")
+        if len(decimal) > AUTO_TRUNCATE_LENGTH:
+            decimal = int(decimal[: AUTO_TRUNCATE_LENGTH + 1])
+            # round to nearest 10
+            decimal = round(decimal, -1)
+            # check if we've rolled over to a new integer
+            if len(str(decimal)) > AUTO_TRUNCATE_LENGTH:
+                integer = str(int(integer) + 1)
+                decimal = ""  # decimal will always be 0 at this point
+        # remove trailing zeros
+        decimal = decimal.rstrip("0")
+        if decimal:
+            return f"{integer}.{decimal}"
+        return integer
+    return value
 
 
-class Subtract(_BinaryOperator):
-    def __init__(self, left: Token, right: Token):
-        super().__init__("-", left, right)
+def format_unit(unit: pint.Unit, si: bool = False) -> str:
+    """Formats a pint.Unit object.
 
-    def calc_value(self) -> Any:
-        left, right = self.get_left_right_values()
-        if left is None or right is None:
-            return None
-        return left - right
+    Parameters
+    ----------
+    unit : pint.Unit
+        The unit to be formatted.
+    si : bool, optional
+        If True, the unit will be formatted using siunitx syntax. Otherwise, the unit will be formatted directly using `\mathrm`. Default False
+
+    Returns
+    -------
+    str
+        The formatted unit.
+    """    
+    if si:
+        return f"{unit:Lx}"
+    return f"{unit:T}"
+
+def unit(unit: str | pint.Unit, in_math_mode: bool = False) -> str:
+    """Formats a unit.
+
+    Parameters
+    ----------
+    unit : str | pint.Unit
+        The unit to be formatted. This can be a pint.Unit object, a string in siunitx format (e.g. `\meter\per\second\squared`), written fully (`meter per second squared`), or abbreviated (`m/s^2` or `m s^-2`).
+    in_math_mode : bool, optional
+        If True, it is assumed that the function is called from inside math mode. If False, math mode delimiters (`$`) will be added. Default False
+
+    Returns
+    -------
+    str
+        The formatted unit.
+    """    
+    if in_math_mode:
+        return format_unit(parse_unit(unit))
+    return "$" + format_unit(parse_unit(unit)) + "$"
+
+# def format_si_unit(units: str, html: bool = False) -> str:
+#     units = units.strip()
+#     if units.startswith("per "):
+#         parsed = 1 / ureg.parse_expression(units[4:])
+#     else:
+#         parsed = ureg.parse_expression(units)
+#     if html:
+#         output = f"{parsed.units:~Hs}"
+#         # output = re.sub(r"\bdeg\b", "&deg;", output)
+#         output = output.replace("deg", "&deg;")
+#         return output
+#     output = f"{parsed.units:~Ls}"
+#     output = re.sub(r"\bdeg\b", r"^{\\circ}", output)
+#     return output
 
 
-class Multiply(_BinaryOperator):
-    def __init__(self, left: Token, right: Token):
-        super().__init__("", left, right)
+class Variable(Quantity):
+    def __init__(
+        self,
+        name: str,
+        value: float,
+        fmt: Optional[str] = None,
+        unit: Optional[pint.Unit | str] = None,
+    ) -> "Variable":
+        """A variable with a name, value, and optional unit and format specifier.
 
-    def calc_value(self) -> Any:
-        left, right = self.get_left_right_values()
-        if left is None or right is None:
-            return None
-        return left * right
+        Parameters
+        ----------
+        name : str
+            The name of the variable. This will be used when rendering the variable directly.
+        value : float
+            The value of the variable. This will be used when the variable is called as a function.
+        fmt : Optional[str], optional
+            The format specifier to use when rendering the variable. If None, the default format specifier will be used. If `fmt = ''`, no format specifier will be used. Default None
+        unit : Optional[pint.Unit  |  str], optional
+            The unit of the variable. This can be a pint.Unit object, a string in siunitx format (e.g. `\meter\per\second\squared`), written fully (meter per second squared), or abbreviated (m/s^2 or m s^-2). If None, the value will be assumed to be dimensionless. Default None
+        """
+        super().__init__(value, fmt, unit)
+        self.name = Literal(name)
+
+    def __str__(self) -> str:
+        return self.name.__str__()
+
+
+def as_token(value: Token | str | float | List | Tuple | Set | pint.Quantity) -> Token:
+    """Converts a value to a Token or subclass.
+
+    Parameters
+    ----------
+    value : Token | str | float | List | Tuple | Set | pint.Quantity
+        The value to be converted. If this is an iterable (tuple, list, set), the elements will be converted to Tokens, and if there is only a single element it will be encased in the appropriate brackets. 
+
+    Returns
+    -------
+    Token
+        The converted value. This can be a Token, Literal, Quantity, SquareBracket, Bracket, or CurlyBracket.
+
+    Raises
+    ------
+    TypeError
+        If the value cannot be converted to a Token.
+    """    
+    if isinstance(value, Token):
+        return value
+    if isinstance(value, pint.Quantity):
+        return Quantity(value.magnitude, unit=value.units)
+    if isinstance(value, str):
+        if value.isnumeric():
+            value = float(value)
+            # if it's an integer, convert to int
+            if value.is_integer():
+                value = int(value)
+            return Quantity(value)
+        return Literal(value)
+    if isinstance(value, float):
+        return Quantity(value)
+    if isinstance(value, int):
+        return Quantity(value, fmt="d")
+    if isinstance(value, list):
+        return SquareBracket(*[as_token(v) for v in value], scale=True)
+    if isinstance(value, tuple):
+        return Bracket(*[as_token(v) for v in value], scale=True)
+    if isinstance(value, set):
+        return CurlyBracket(*[as_token(v) for v in value], scale=True)
+
+    raise TypeError(f"Expected Token, str, or float, got {type(value)}")
+
+symbol = as_token
+sym = as_token
+
+class _UnaryOperator(Quantity, ABC):
+    def __init__(self, value: CallableToken | str | float) -> "_UnaryOperator":
+        self.right = as_token(value)
+        self.symbol = ""
+        self._value = None
+
+    def __str__(self) -> str:
+        return f"{self.symbol}{{{self.right}}}"
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        value = self.value
+        if isinstance(value, pint.Quantity):
+            return Quantity(value.magnitude, unit=value.units)(*args, **kwargs)
+        return Quantity(value)(*args, **kwargs)
+
+    @abstractmethod
+    def _operation(self, value: CallableToken) -> Any:
+        pass
+    
+
+    @property
+    def value(self) -> Any:
+        if self._value is None:
+            self._value = self._operation(
+                self.right
+            ) 
+        return self._value
+
+    @property
+    def unit(self) -> pint.Unit:
+        if isinstance(self.value, Quantity):
+            return self.value.unit
+        elif isinstance(self.value, pint.Quantity):
+            return self.value.units
+        return None
+
+    @unit.setter
+    def unit(self, unit: pint.Unit | str):
+        if isinstance(self.value, Quantity):
+            self.value.unit = unit
+        elif isinstance(self.value, pint.Quantity):
+            self._value = self.value.to(unit)
+        else:
+            raise ValueError(f"Cannot set unit of non-Quantity of type {str(type(self.value)).replace('<', '').replace('>', '')}")
+
+    def as_quantity(self) -> Quantity:
+        return Quantity(self.value)
+
+
+class Negation(_UnaryOperator):
+    def __init__(self, value: CallableToken | str | float) -> "Negation":
+        """Negates a value, such as `-a`.
+
+        Parameters
+        ----------
+        value : CallableToken | str | float
+            The value to be negated
+        """        
+        super().__init__(value)
+        self.symbol = "-"
+
+    def _operation(self, value: CallableToken) -> Any:
+        return -value.value
+
+
+class Positive(_UnaryOperator):
+    def __init__(self, value: CallableToken | str | float) -> "Positive":
+        """Returns the positive value of a quantity, such as `+a`. This is numerically equivalent to `a`, and only differs in rendering. It is *not* equivalent to `abs(a)`. Use `absolute(a)` for the absolute value.
+
+        Parameters
+        ----------
+        value : CallableToken | str | float
+            The value.
+        """
+        super().__init__(value)
+        self.symbol = "+"
+
+    def _operation(self, value: CallableToken) -> Any:
+        return value.value
+
+
+class _BinaryOperator(CallableToken, ABC):
+    def __init__(
+        self,
+        left: CallableToken | str | float,
+        right: CallableToken | str | float,
+    ) -> "_BinaryOperator":
+        self.left = as_token(left)
+        self.right = as_token(right)
+        self.symbol = ""
+        self.precedence = 0  # we'll use this to track if we need to add parentheses
+        self.group_left = False
+        self.group_right = False
+        # super().__init__(self.value)
+        self._value = None
+
+    def __str__(self) -> str:
+        left = f"{{{self.left}}}" if self.group_left else f"{self.left}"
+        right = f"{{{self.right}}}" if self.group_right else f"{self.right}"
+        return f"{left} {self.symbol} {right}"
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        """Render the value (potentially with units) of the operation.
+
+        Returns
+        -------
+        Literal
+            The rendered value.
+        """        
+        value = self.value
+        if isinstance(value, pint.Quantity):
+            return Quantity(value.magnitude, unit=value.units)(*args, **kwargs)
+        return Quantity(value)(*args, **kwargs)
+
+    @abstractmethod
+    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
+        pass
+
+    # TODO: Tidy this up, and apply to other classes (UnaryOperator)
+
+    @property
+    def value(self) -> Any:
+        if self._value is None:
+            self._value = self._operation(
+                self.left, self.right
+            ) 
+        return self._value
+
+    @property
+    def unit(self) -> pint.Unit:
+        if isinstance(self.value, Quantity):
+            return self.value.unit
+        elif isinstance(self.value, pint.Quantity):
+            return self.value.units
+        return None
+
+    @unit.setter
+    def unit(self, unit: pint.Unit | str):
+        if isinstance(self.value, Quantity):
+            self.value.unit = unit
+        elif isinstance(self.value, pint.Quantity):
+            self._value = self.value.to(unit)
+        else:
+            raise ValueError(f"Cannot set unit of non-Quantity of type {str(type(self.value)).replace('<', '').replace('>', '')}")
+
+    def as_quantity(self) -> Quantity:
+        """Convert the operation object to a Quantity with the value and units of the operation.
+
+        Returns
+        -------
+        Quantity
+            The Quantity object with the value and units of the operation.
+        """        
+        return Quantity(self.value)
+
+class Addition(_BinaryOperator):
+    def __init__(
+        self, left: CallableToken | str | float, right: CallableToken | str | float
+    ) -> "Addition":
+        """Adds two values together, such as `a + b`.
+
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The left operand.
+        right : CallableToken | str | float
+            The right operand.
+        """        
+        super().__init__(left, right)
+        self.symbol = "+"
+        self.precedence = 1
+
+    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
+        return left.value + right.value
+
+
+class Subtraction(_BinaryOperator):
+    def __init__(
+        self, left: CallableToken | str | float, right: CallableToken | str | float
+    ) -> "Subtraction":
+        """Subtracts one value from another, such as `a - b`.
+
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The left operand.
+        right : CallableToken | str | float
+            The right operand.
+        """
+        super().__init__(left, right)
+        self.symbol = "-"
+        self.precedence = 1
+
+    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
+        return left.value - right.value
+
+
+class Multiplication(_BinaryOperator):
+    def __init__(
+        self, left: CallableToken | str | float, right: CallableToken | str | float
+    ) -> "Multiplication":
+        """Multiplies two values together, such as `a * b`. This is rendered as `ab`.
+
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The left operand.
+        right : CallableToken | str | float
+            The right operand.
+        """
+        super().__init__(left, right)
+        self.symbol = ""  # multiplication is implicit, Multiplication(a, b) -> ab. Use Times(a, b) to get a \times b
+        self.precedence = 2
+
+    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
+        return left.value * right.value
 
 
 class Times(_BinaryOperator):
-    # Like multiply, but explicitly uses the multiplication symbol
-    def __init__(self, left: Token, right: Token):
-        super().__init__(MULTIPLICATION_OPERATOR, left, right)
+    def __init__(
+        self, left: CallableToken | str | float, right: CallableToken | str | float
+    ) -> "Times":
+        """Multiplies two values together, such as `a * b`. This is rendered as `a \\times b` (or `a \\cdot b` etc. depending on the value of `MULTIPLICATION_OPERATOR`).
 
-    def calc_value(self) -> Any:
-        left, right = self.get_left_right_values()
-        if left is None or right is None:
-            return None
-        return left * right
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The left operand.
+        right : CallableToken | str | float
+            The right operand.
+        """
+        super().__init__(left, right)
+        self.symbol = MULTIPLICATION_OPERATOR
+        self.precedence = 2
+
+    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
+        return left.value * right.value
 
 
-class Divide(_BinaryOperator):
-    def __init__(self, left: Token, right: Token, display: bool = False):
-        super().__init__("/", left, right)
-        self.display = display
+class Division(_BinaryOperator):
+    def __init__(
+        self,
+        left: CallableToken | str | float,
+        right: CallableToken | str | float,
+        display_mode: bool = False,
+    ) -> "Division":
+        """Divides one value by another, such as `a / b`. This is rendered as `\\frac{a}{b}`, or `\\dfrac{a}{b}` if `display_mode = True`.
+
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The numerator.
+        right : CallableToken | str | float
+            The denominator.
+        display_mode : bool, optional
+            If True, the division will be rendered as a display fraction regardless of the context, using `\\dfrac` instead of `\\frac`. Default False
+        """
+        super().__init__(left, right)
+        if (
+            display_mode
+        ):  # these will not format properly -- we're overriding the __str__ function anyway.
+            self.symbol = "\\dfrac"
+        else:
+            self.symbol = "\\frac"
+        self.precedence = 2
+
+    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
+        return left.value / right.value
 
     def __str__(self) -> str:
-        if self.display:
-            return f"\\dfrac{{{self.left}}}{{{self.right}}}"
-        return f"\\frac{{{self.left}}}{{{self.right}}}"
-
-    def calc_value(self) -> Any:
-        left, right = self.get_left_right_values()
-        if left is None or right is None:
-            return None
-        result = left / right
-        # if it's an integer, convert it to an int
-        if result.is_integer():
-            result = int(result)
-        return result
+        return f"{self.symbol}{{{self.left}}}{{{self.right}}}"
 
 
 class Power(_BinaryOperator):
-    def __init__(self, left: Token, right: Token):
-        group_left = not isinstance(left, Index)
-        super().__init__("^", left, right, group_left=group_left, group_right=True)
+    def __init__(
+        self,
+        left: CallableToken | str | float,
+        right: CallableToken | str | float,
+    ) -> "Power":
+        """Raises one value to the power of another, such as `a ** b`. This is rendered as `a^b`. Special behaviour occurs if the left operand is an Index object (to allow constructs like `a_i^2` instead of `{a_i}^2`), or if the left operand is a DimensionedLiteral (to allow constructs like `(2 m)^2` instead of `2 m^2`).
 
-    def calc_value(self) -> Any:
-        left, right = self.get_left_right_values()
-        if left is None or right is None:
-            return None
-        return left**right
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The base.
+        right : CallableToken | str | float
+            The exponent.
+        """        
+        super().__init__(left, right)
+        self.symbol = "^"
+        self.precedence = 3
+        self.group_right = True
+        if not isinstance(left, Index):
+            self.group_left = True
+        if isinstance(self.left, DimensionedLiteral):
+            self.left = Bracket(self.left, scale=True) # Should this be in the string conversion rather than here? Would mean changes to _BinaryOperator or a separate __str__ for Power.
+
+    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
+        return left.value**right.value
 
 
 class Index(_BinaryOperator):
-    def __init__(self, left: Token, right: Token):
-        group_left = not isinstance(left, Power)
-        super().__init__("_", left, right, group_left=group_left, group_right=True)
+    def __init__(
+        self,
+        left: CallableToken | str | float,
+        right: CallableToken | str | float,
+    ) -> "Index":
+        """Indexes one value with another, such as `a_i`. This is rendered as `a_i`. Special behaviour occurs if the left operand is a Power object (to allow constructs like `a^2_i` instead of `{a^2}_i`).
 
-    def calc_value(self) -> Any:
-        left, right = self.get_left_right_values()
-        if left is None or right is None:
-            return None
-        return left  # This should be used purely for display purposes, so we shouldn't change the value. Maybe we should always return None here?
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The base.
+        right : CallableToken | str | float
+            The index.
+        """
+        super().__init__(left, right)
+        self.symbol = "_"
+        self.precedence = 3
+        self.group_right = True
+        if not isinstance(left, Power):
+            self.group_left = True
 
-class _NonValuedBinaryOperator(_BinaryOperator):
-    def calc_value(self) -> Any:
+    def _operation(self, left: CallableToken, right: CallableToken) -> None:
+        pass  # This is not a real operation, and only exists for simple formatting
+
+
+class Concatenation(Token):
+    # non callable
+    def __init__(self, *args: CallableToken) -> "Concatenation":
+        """Concatenates a number of values together, such as `Concatenation(a, b, c)` --> `abc`.
+        """        
+        self.args = args
+
+    def __str__(self) -> str:
+        return " ".join(str(arg) for arg in self.args)
+
+
+class _Container(CallableToken, ABC):
+    def __init__(self, *children: str | float | Token) -> "_Container":
+        self.children = [as_token(child) for child in children]
+
+    @abstractmethod
+    def __str__(self) -> str:
+        pass
+
+    @property
+    def value(self) -> Quantity | None:
+        if len(self.children) == 1:
+            return self.children[0].value
         return None
 
+    def __getitem__(self, index: int) -> Token:
+        # We want this to actually act like an array index, not a subscript
+        return self.children[index]
 
-class Equation(_NonValuedBinaryOperator):
-    def __init__(self, left: Token, right: Token):
-        super().__init__("=", left, right)
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        if len(self) == 1:
+            return self.children[0](*args, **kwargs)
+        raise ValueError(f"Cannot call a container with multiple {len(self)} children")
 
-class LessThan(_NonValuedBinaryOperator):
-    def __init__(self, left: Token, right: Token):
-        super().__init__("<", left, right)
+    def __len__(self) -> int:
+        return len(self.children)
 
-class GreaterThan(_NonValuedBinaryOperator):
-    def __init__(self, left: Token, right: Token):
-        super().__init__(">", left, right)
+    def __iter__(self):
+        return iter(self.children)
 
-class LessThanOrEqual(_NonValuedBinaryOperator):
-    def __init__(self, left: Token, right: Token):
-        super().__init__("\\leq", left, right)
 
-class GreaterThanOrEqual(_NonValuedBinaryOperator):
-    def __init__(self, left: Token, right: Token):
-        super().__init__("\\geq", left, right)
+class Sequence(_Container):
+    def __str__(self) -> str:
+        return ", ".join(str(child) for child in self.children)
 
-class NotEqual(_NonValuedBinaryOperator):
-    def __init__(self, left: Token, right: Token):
-        super().__init__("\\neq", left, right)
 
-class LimitsExpression(Expression):
-    def __init__(self, function: Macro | str, expr: Token | Any, lower: Token | Any = None, upper: Token | Any = None):
+class Bracket(_Container):
+    def __init__(
+        self, *children: str | float | Token, scale: bool = False
+    ) -> "Bracket":
+        """A bracketed expression, such as `(a + b)`.
+
+        Parameters
+        ----------
+        scale : bool, optional
+            If True, the brackets will be scaled to fit the contents. Default False
+        """        
+        super().__init__(*children)
+        self.scale = scale
+        self.left_bracket = "("
+        self.right_bracket = ")"
+
+    def __str__(self) -> str:
+        scale_left, scale_right = ("\\left", "\\right") if self.scale else ("", "")
+        return f"{scale_left}{self.left_bracket} {', '.join(str(child) for child in self.children)} {scale_right}{self.right_bracket}"
+
+
+class SquareBracket(Bracket):
+    def __init__(
+        self, *children: str | float | Token, scale: bool = False
+    ) -> "SquareBracket":
+        """A square bracketed expression, such as `[a + b]`.
+
+        Parameters
+        ----------
+        scale : bool, optional
+            If True, the brackets will be scaled to fit the contents. Default False
+        """        
+        super().__init__(*children, scale=scale)
+        self.left_bracket = "["
+        self.right_bracket = "]"
+
+
+class CurlyBracket(Bracket):
+    def __init__(
+        self, *children: str | float | Token, scale: bool = False
+    ) -> "CurlyBracket":
+        """A curly bracketed/braced expression, such as `{a + b}`.
+
+        Parameters
+        ----------
+        scale : bool, optional
+            If True, the brackets will be scaled to fit the contents. Default False
+        """
+        super().__init__(*children, scale=scale)
+        self.left_bracket = "\\lbrace"
+        self.right_bracket = "\\rbrace"
+
+
+class AngleBracket(Bracket):
+    def __init__(
+        self, *children: str | float | Token, scale: bool = False
+    ) -> "AngleBracket":
+        """An angle bracketed expression, such as `<a + b>`.
+
+        Parameters
+        ----------
+        scale : bool, optional
+            If True, the brackets will be scaled to fit the contents. Default False
+        """
+        super().__init__(*children, scale=scale)
+        self.left_bracket = "\\langle"
+        self.right_bracket = "\\rangle"
+
+
+class AbsoluteValue(Bracket):
+    def __init__(
+        self, *children: str | float | Token, scale: bool = False
+    ) -> "AbsoluteValue":
+        """An absolute value expression, such as `|a + b|`.
+
+        Parameters
+        ----------
+        scale : bool, optional
+            If True, the brackets will be scaled to fit the contents. Default False
+        """
+        super().__init__(*children, scale=scale)
+        self.left_bracket = "|"
+        self.right_bracket = "|"
+        if self.value < 0:
+            self._value = -self.value # seems like the safest way to do this when value could be anything
+        else:
+            self._value = self.value
+
+    # This one can actually be called!
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        value = self._value
+
+        if isinstance(value, pint.Quantity):
+            return Quantity(value.magnitude, unit=value.units)(*args, **kwargs)
+        return Quantity(value)(*args, **kwargs)
+
+
+class _BooleanBinaryOperator(_BinaryOperator):
+    def __init__(
+        self, left: CallableToken | str | float, right: CallableToken | str | float
+    ) -> "_BooleanBinaryOperator":
+        super().__init__(left, right)
+        self.precedence = 1
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        value = self._operation(self.left, self.right)
+        return Literal(str(value))
+
+    @abstractmethod
+    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
+        pass
+
+
+class Equality(_BooleanBinaryOperator):
+    def __init__(
+        self, left: CallableToken | str | float, right: CallableToken | str | float
+    ) -> "Equality":
+        """Equality between two expressions, such as `a = b`. This is rendered as `a = b`, and its value is as expected; `True` if `a` is equal to `b`, `False` otherwise.
+
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The left operand.
+        right : CallableToken | str | float
+            The right operand.
+        """
+        super().__init__(left, right)
+        self.symbol = "="
+
+    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
+        return left.value == right.value
+
+
+class LessThan(_BooleanBinaryOperator):
+    def __init__(
+        self, left: CallableToken | str | float, right: CallableToken | str | float
+    ) -> "LessThan":
+        """Inequality between two expressions, such as `a < b`. This is rendered as `a < b`, and its value is as expected; `True` if `a` is less than `b`, `False` otherwise.
+
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The left operand.
+        right : CallableToken | str | float
+            The right operand.
+        """
+        super().__init__(left, right)
+        self.symbol = "<"
+
+    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
+        return left.value < right.value
+
+
+class GreaterThan(_BooleanBinaryOperator):
+    def __init__(
+        self, left: CallableToken | str | float, right: CallableToken | str | float
+    ) -> "GreaterThan":
+        """Inequality between two expressions, such as `a > b`. This is rendered as `a > b`, and its value is as expected; `True` if `a` is greater than `b`, `False` otherwise.
+
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The left operand.
+        right : CallableToken | str | float
+            The right operand.
+        """
+        super().__init__(left, right)
+        self.symbol = ">"
+
+    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
+        return left.value > right.value
+
+
+class LessThanOrEqual(_BooleanBinaryOperator):
+    def __init__(
+        self, left: CallableToken | str | float, right: CallableToken | str | float
+    ) -> "LessThanOrEqual":
+        """Inequality between two expressions, such as `a <= b`. This is rendered as `a \\leq b`, and its value is as expected; `True` if `a` is less than or equal to `b`, `False` otherwise.
+
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The left operand.
+        right : CallableToken | str | float
+            The right operand.
+        """
+        super().__init__(left, right)
+        self.symbol = "\\leq"
+
+    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
+        return left.value <= right.value
+
+
+class GreaterThanOrEqual(_BooleanBinaryOperator):
+    def __init__(
+        self, left: CallableToken | str | float, right: CallableToken | str | float
+    ) -> "GreaterThanOrEqual":
+        """Inequality between two expressions, such as `a >= b`. This is rendered as `a \\geq b`, and its value is as expected; `True` if `a` is greater than or equal to `b`, `False` otherwise.
+
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The left operand.
+        right : CallableToken | str | float
+            The right operand.
+        """
+        super().__init__(left, right)
+        self.symbol = "\\geq"
+
+    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
+        return left.value >= right.value
+
+
+class NotEqual(_BooleanBinaryOperator):
+    def __init__(
+        self, left: CallableToken | str | float, right: CallableToken | str | float
+    ) -> "NotEqual":
+        """Inequality between two expressions, such as `a != b`. This is rendered as `a \\neq b`, and its value is as expected; `True` if `a` is not equal to `b`, `False` otherwise.
+
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The left operand.
+        right : CallableToken | str | float
+            The right operand.
+        """
+        super().__init__(left, right)
+        self.symbol = "\\neq"
+
+    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
+        return left.value != right.value
+
+
+class Approximation(_BooleanBinaryOperator):
+    def __init__(
+        self, left: CallableToken | str | float, right: CallableToken | str | float
+    ) -> "Approximation":
+        """Approximate equality between two expressions. This is rendered as `a \\approx b`. Since approximate equality is not neatly defined, its value is equivalent to `a == b`.
+
+        Parameters
+        ----------
+        left : CallableToken | str | float
+            The left operand.
+        right : CallableToken | str | float
+            The right operand.
+        """
+        super().__init__(left, right)
+        self.symbol = "\\approx"
+
+    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
+        return left.value == right.value
+
+
+class LimitsExpression(Token):
+    def __init__(
+        self,
+        function: Macro | Token | str,
+        expr: Token | Any,
+        lower: Token | Any = None,
+        upper: Token | Any = None,
+        suffix: Token | Any = None,
+    ):
+        """A mathematical expression with limits, such as an integral or summation.
+
+        Parameters
+        ----------
+        function : Macro | Token | str
+            The function to be applied, such as `int` for an integral or `sum` for a summation. If this is a string, it will be converted to a Macro object.
+        expr : Token | Any
+            The expression to which the function is applied, i.e. the integrand in an integral.
+        lower : Token | Any, optional
+            The lower limit of the expression, by default None
+        upper : Token | Any, optional
+            The upper limit of the expression, by default None
+        suffix : Token | Any, optional
+            A suffix to be added to the expression, such as `dx` in an integral, by default None
+        """        
         self.value = None
         if isinstance(function, str):
             function = Macro(function)
         self.function = function
-        self.lower = None if lower is None else as_expression(lower)
-        self.upper = None if upper is None else as_expression(upper)
-        self.expr = as_expression(expr)
+        self.lower = None if lower is None else as_token(lower)
+        self.upper = None if upper is None else as_token(upper)
+        self.expr = as_token(expr)
+        self.suffix = None if suffix is None else as_token(suffix)
 
     def __str__(self) -> str:
+        suffix = "" if self.suffix is None else str(self.suffix)
         if self.lower is None and self.upper is None:
-            return f"{self.function}{self.expr}"
+            return f"{self.function} {self.expr} {suffix}"
         if self.lower is None:
-            return f"{self.function}\\limits^{{{self.upper}}}{self.expr}"
+            return f"{self.function} \\limits ^{{{self.upper}}} {self.expr} {suffix}"
         if self.upper is None:
-            return f"{self.function}\\limits_{{{self.lower}}}{self.expr}"
-        return f"{self.function}\\limits_{{{self.lower}}}^{{{self.upper}}}{self.expr}"
+            return f"{self.function} \\limits _{{{self.lower}}} {self.expr} {suffix}"
+        return f"{self.function} \\limits _{{{self.lower}}} ^{{{self.upper}}} {self.expr} {suffix}"
 
-# class Integral(LimitsExpression):
-#     def __init__(self, expr: Token | Any, int_var: Token | Any, lower: Token | Any = None, upper: Token | Any = None):
-#         super().__init__("int", expr, lower, upper)
-#         if not isinstance(int_var, Token):
-#             int_var = Literal(int_var)
-#         self.int_var = int_var
 
-#     def __str__(self) -> str:
-#         return super().__str__() + f"\\,\\mathrm{{d}}{self.int_var}"
+class Integral(LimitsExpression):
+    def __init__(
+        self,
+        expr: Token | Any,
+        lower: Token | Any = None,
+        upper: Token | Any = None,
+        variable: Token | Any = None,
+    ):
+        """An integral expression, such as `\\int_{a}^{b} f(x) dx`.
 
-# == LaTeX Math Macros ==
+        Parameters
+        ----------
+        expr : Token | Any
+            The integrand.
+        lower : Token | Any, optional
+            The lower limit of the integral, by default None
+        upper : Token | Any, optional
+            The upper limit of the integral, by default None
+        variable : Token | Any, optional
+            The variable of integration, such as `x` which will be rendered as `dx`, by default None
+        """        
+        super().__init__(
+            "int", expr, lower, upper, Macro(",") & Macro("mathrm", "d") & variable
+        )
+
+class Limit(LimitsExpression):
+    def __init__(
+        self,
+        expr: Token | Any,
+        variable: Token | Any = None,
+        limit: Token | Any = None
+    ):
+        """A limit expression, such as `\\lim_{x \\to a} f(x)`.
+
+        Parameters
+        ----------
+        expr : Token | Any
+            The expression.
+        variable : Token | Any, optional
+            The variable, such as `x` in the example above, by default None
+        limit : Token | Any, optional
+            The limit of the variable, such as `a` in the example above, by default None
+        """        
+        lower_expr = None
+        if variable is not None and limit is not None:
+            lower_expr = as_token(variable) & Macro("to") & as_token(limit)
+        elif variable is not None:
+            lower_expr = as_token(variable)
+        elif limit is not None:
+            lower_expr = as_token(limit)
+        super().__init__(
+            "lim", expr, lower = lower_expr
+        )
+    
+class Summation(LimitsExpression):
+    def __init__(
+        self,
+        expr: Token | Any,
+        lower: Token | Any = None,
+        variable: Token | Any = None,
+        upper: Token | Any = None
+    ):
+        """A summation expression, such as `\\sum_{i = 0}^{n} a_i`.
+
+        Parameters
+        ----------
+        expr : Token | Any
+            The expression to be summed.
+        lower : Token | Any, optional
+            The lower limit of the summation, such as `0` in the example above, by default None
+        variable : Token | Any, optional
+            The variable of the summation, such as `i` in the example above, by default None
+        upper : Token | Any, optional
+            The upper limit of the summation, such as `n` in the example above, by default None
+        """        
+        if lower is None and variable is None:
+            lower_expr = None
+        elif lower is None:
+            lower_expr = as_token(variable)
+        elif variable is None:
+            lower_expr = as_token(lower)
+        else:
+            lower_expr = as_token(variable) == as_token(lower)
+        super().__init__(
+            "sum", expr, lower = lower_expr, upper = upper
+        )
+
+
+
+class NthRoot(CallableToken):
+    def __init__(
+        self, value: Token | str | float, root: Token | str | float
+    ) -> "NthRoot":
+        """The nth root of a value, such as `\\sqrt{a}` or `\\sqrt[3]{a}`.
+
+        Parameters
+        ----------
+        value : Token | str | float
+            The value to be rooted.
+        root : Token | str | float
+            The order of the root. If this is 2, the root will be a square root (rendered with `\\sqrt`), if 3 it will be a cube root (rendered with `\\sqrt[3]`), etc.
+        """        
+        self.value = as_token(value)
+        self.root = as_token(root)
+
+    def __str__(self) -> str:
+        if self.root.value == 2:
+            return f"\\sqrt{{{self.value}}}"
+        return f"\\sqrt[{self.root}]{{{self.value}}}"
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        return Quantity(self.value.value ** (1 / self.root.value))(*args, **kwargs)
+
+
+def sqrt(value: Token | str | float) -> NthRoot:
+    """The square root of a value, such as `\\sqrt{a}`.
+
+    Parameters
+    ----------
+    value : Token | str | float
+        The value to be rooted.
+
+    Returns
+    -------
+    NthRoot
+        The square root of the value.
+    """    
+    return NthRoot(value, 2)
+
+
+def cbrt(value: Token | str | float) -> NthRoot:
+    """The cube root of a value, such as `\\sqrt[3]{a}`.
+
+    Parameters
+    ----------
+    value : Token | str | float
+        The value to be rooted.
+
+    Returns
+    -------
+    NthRoot
+        The cube root of the value.
+    """    
+    return NthRoot(value, 3)
+
+
+class _TrigFunction(CallableToken, ABC):
+    # Not all of these are actually trig functions, but behave the same for formatting purposes
+    def __init__(
+        self,
+        name: str,
+        expr: Token | str,
+        power: Optional[Token | Any] = None,
+        inverse: bool = False,
+    ):     
+        self.name = name
+        self.expr = as_token(expr)
+        self.power = None if power is None else as_token(power)
+        self.inverse = inverse
+
+    def __str__(self) -> str:
+        if self.inverse:
+            if self.power is None:
+                return _Container(
+                    Power(Macro(self.name), as_token(-1)), Bracket(self.expr, scale=True)
+                )
+            return Power(
+                Bracket(
+                    _Container(
+                        Power(Macro(self.name), as_token(-1)), Bracket(self.expr, scale=True)
+                    )
+                ),
+                self.power
+            )
+        if self.power is None:
+            return _Container(Macro(self.name), Bracket(self.expr, scale=True))
+        return _Container(
+            Power(Macro(self.name), self.power), Bracket(self.expr, scale=True)
+        )
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        value = self._operation(self.expr, self.power)
+        if isinstance(value, pint.Quantity):
+            return Quantity(value.magnitude, unit=value.units)(*args, **kwargs) 
+        return Quantity(value)(*args, **kwargs) 
+
+    @abstractmethod
+    def _operation(self, expr: Token, power: Token) -> Any:
+        pass
+
+
+class Sine(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "Sine":
+        """The sine of an expression, optionally to some power, such as `\\sin^2(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the sine function.
+        power : Optional[Token  |  Any], optional
+            The power to which the sine is raised. Note that `power = -1` is *not* equivalent to `arcsin(a)`, but rather `1/sin(a)`. For the inverse sine function, use `ArcSine` instead. Default None (equivalent to 1)
+        """        
+        super().__init__("sin", expr, power)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.sin(expr.value) ** (1 if power is None else power.value)
+
+
+class Cosine(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "Cosine":
+        """The cosine of an expression, optionally to some power, such as `\\cos^2(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the cosine function.
+        power : Optional[Token  |  Any], optional
+            The power to which the cosine is raised. Note that `power = -1` is *not* equivalent to `arccos(a)`, but rather `1/cos(a)`. For the inverse cosine function, use `ArcCosine` instead. Default None (equivalent to 1)
+        """
+        super().__init__("cos", expr, power)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.cos(expr.value) ** (1 if power is None else power.value)
+
+
+class Tangent(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "Tangent":
+        """The tangent of an expression, optionally to some power, such as `\\tan^2(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the tangent function.
+        power : Optional[Token  |  Any], optional
+            The power to which the tangent is raised. Note that `power = -1` is *not* equivalent to `arctan(a)`, but rather `1/tan(a)`. For the inverse tangent function, use `ArcTangent` instead. Default None (equivalent to 1)
+        """
+        super().__init__("tan", expr, power)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.tan(expr.value) ** (1 if power is None else power.value)
+
+class ArcSine(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "ArcSine":
+        """The inverse sine of an expression, optionally to some power, such as `\\sin^{-1}(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the inverse sine function.
+        power : Optional[Token  |  Any], optional
+            The power to which the inverse sine is raised. Default None (equivalent to 1)
+        """
+        super().__init__("sin", expr, power, inverse=True)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.asin(expr.value) ** (1 if power is None else power.value)
+    
+class ArcCosine(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "ArcCosine":
+        """The inverse cosine of an expression, optionally to some power, such as `\\cos^{-1}(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the inverse cosine function.
+        power : Optional[Token  |  Any], optional
+            The power to which the inverse cosine is raised. Default None (equivalent to 1)
+        """
+        super().__init__("cos", expr, power, inverse=True)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.acos(expr.value) ** (1 if power is None else power.value)
+    
+class ArcTangent(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "ArcTangent":
+        """The inverse tangent of an expression, optionally to some power, such as `\\tan^{-1}(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the inverse tangent function.
+        power : Optional[Token  |  Any], optional
+            The power to which the inverse tangent is raised. Default None (equivalent to 1)
+        """
+        super().__init__("tan", expr, power, inverse=True)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.atan(expr.value) ** (1 if power is None else power.value)
+    
+class Cosecant(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "Cosecant":
+        """The cosecant of an expression, optionally to some power, such as `\\csc^2(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the cosecant function.
+        power : Optional[Token  |  Any], optional
+            The power to which the cosecant is raised. Note that `power = -1` is *not* equivalent to `arccsc(a)`, but rather `1/csc(a)`. For the inverse cosecant function, use `ArcCosecant` instead. Default None (equivalent to 1)
+        """
+        super().__init__("csc", expr, power)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return 1 / math.sin(expr.value) ** (1 if power is None else power.value)
+    
+class Secant(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "Secant":
+        """The secant of an expression, optionally to some power, such as `\\sec^2(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the secant function.
+        power : Optional[Token  |  Any], optional
+            The power to which the secant is raised. Note that `power = -1` is *not* equivalent to `arcsec(a)`, but rather `1/sec(a)`. For the inverse secant function, use `ArcSecant` instead. Default None (equivalent to 1)
+        """
+        super().__init__("sec", expr, power)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return 1 / math.cos(expr.value) ** (1 if power is None else power.value)
+    
+class Cotangent(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "Cotangent":
+        """The cotangent of an expression, optionally to some power, such as `\\cot^2(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the cotangent function.
+        power : Optional[Token  |  Any], optional
+            The power to which the cotangent is raised. Note that `power = -1` is *not* equivalent to `arccot(a)`, but rather `1/cot(a)`. For the inverse cotangent function, use `ArcCotangent` instead. Default None (equivalent to 1)
+        """
+        super().__init__("cot", expr, power)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return 1 / math.tan(expr.value) ** (1 if power is None else power.value)
+    
+class ArcCosecant(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "ArcCosecant":
+        """The inverse cosecant of an expression, optionally to some power, such as `\\csc^{-1}(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the inverse cosecant function.
+        power : Optional[Token  |  Any], optional
+            The power to which the inverse cosecant is raised. Default None (equivalent to 1)
+        """
+        super().__init__("csc", expr, power, inverse=True)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.asin(1 / expr.value) ** (1 if power is None else power.value)
+    
+class ArcSecant(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "ArcSecant":
+        """The inverse secant of an expression, optionally to some power, such as `\\sec^{-1}(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the inverse secant function.
+        power : Optional[Token  |  Any], optional
+            The power to which the inverse secant is raised. Default None (equivalent to 1)
+        """
+        super().__init__("sec", expr, power, inverse=True)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.acos(1 / expr.value) ** (1 if power is None else power.value)
+    
+class ArcCotangent(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "ArcCotangent":
+        """The inverse cotangent of an expression, optionally to some power, such as `\\cot^{-1}(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the inverse cotangent function.
+        power : Optional[Token  |  Any], optional
+            The power to which the inverse cotangent is raised. Default None (equivalent to 1)
+        """
+        super().__init__("cot", expr, power, inverse=True)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.atan(1 / expr.value) ** (1 if power is None else power.value)
+    
+class HyperbolicSine(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "HyperbolicSine":
+        """The hyperbolic sine of an expression, optionally to some power, such as `\\sinh^2(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the hyperbolic sine function.
+        power : Optional[Token  |  Any], optional
+            The power to which the hyperbolic sine is raised. Default None (equivalent to 1)
+        """
+        super().__init__("sinh", expr, power)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.sinh(expr.value) ** (1 if power is None else power.value)
+    
+class HyperbolicCosine(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "HyperbolicCosine":
+        """The hyperbolic cosine of an expression, optionally to some power, such as `\\cosh^2(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the hyperbolic cosine function.
+        power : Optional[Token  |  Any], optional
+            The power to which the hyperbolic cosine is raised. Default None (equivalent to 1)
+        """
+        super().__init__("cosh", expr, power)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.cosh(expr.value) ** (1 if power is None else power.value)
+    
+class HyperbolicTangent(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "HyperbolicTangent":
+        """The hyperbolic tangent of an expression, optionally to some power, such as `\\tanh^2(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the hyperbolic tangent function.
+        power : Optional[Token  |  Any], optional
+            The power to which the hyperbolic tangent is raised. Default None (equivalent to 1)
+        """
+        super().__init__("tanh", expr, power)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.tanh(expr.value) ** (1 if power is None else power.value)
+    
+class HyperbolicCosecant(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "HyperbolicCosecant":
+        """The hyperbolic cosecant of an expression, optionally to some power, such as `\\csch^2(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the hyperbolic cosecant function.
+        power : Optional[Token  |  Any], optional
+            The power to which the hyperbolic cosecant is raised. Default None (equivalent to 1)
+        """
+        super().__init__("csch", expr, power)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return 1 / math.sinh(expr.value) ** (1 if power is None else power.value)
+    
+class HyperbolicSecant(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "HyperbolicSecant":
+        """The hyperbolic secant of an expression, optionally to some power, such as `\\sech^2(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the hyperbolic secant function.
+        power : Optional[Token  |  Any], optional
+            The power to which the hyperbolic secant is raised. Default None (equivalent to 1)
+        """
+        super().__init__("sech", expr, power)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return 1 / math.cosh(expr.value) ** (1 if power is None else power.value)
+
+class HyperbolicCotangent(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "HyperbolicCotangent":
+        """The hyperbolic cotangent of an expression, optionally to some power, such as `\\coth^2(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the hyperbolic cotangent function.
+        power : Optional[Token  |  Any], optional
+            The power to which the hyperbolic cotangent is raised. Default None (equivalent to 1)
+        """        
+        super().__init__("coth", expr, power)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return 1 / math.tanh(expr.value) ** (1 if power is None else power.value)
+
+class HyperbolicArcSine(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "HyperbolicArcSine":
+        """The inverse hyperbolic sine of an expression, optionally to some power, such as `\\sinh^{-1}(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the inverse hyperbolic sine function.
+        power : Optional[Token  |  Any], optional
+            The power to which the inverse hyperbolic sine is raised. Default None (equivalent to 1)
+        """
+        super().__init__("sinh", expr, power, inverse=True)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.asinh(expr.value) ** (1 if power is None else power.value)
+    
+class HyperbolicArcCosine(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "HyperbolicArcCosine":
+        """The inverse hyperbolic cosine of an expression, optionally to some power, such as `\\cosh^{-1}(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the inverse hyperbolic cosine function.
+        power : Optional[Token  |  Any], optional
+            The power to which the inverse hyperbolic cosine is raised. Default None (equivalent to 1)
+        """        
+        super().__init__("cosh", expr, power, inverse=True)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.acosh(expr.value) ** (1 if power is None else power.value)
+
+class HyperbolicArcTangent(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "HyperbolicArcTangent":
+        """The inverse hyperbolic tangent of an expression, optionally to some power, such as `\\tanh^{-1}(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the inverse hyperbolic tangent function.
+        power : Optional[Token  |  Any], optional
+            The power to which the inverse hyperbolic tangent is raised. Default None (equivalent to 1)
+        """        
+        super().__init__("tanh", expr, power, inverse=True)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.atanh(expr.value) ** (1 if power is None else power.value)
+
+class HyperbolicArcCosecant(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "HyperbolicArcCosecant":
+        """The inverse hyperbolic cosecant of an expression, optionally to some power, such as `\\csch^{-1}(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the inverse hyperbolic cosecant function.
+        power : Optional[Token  |  Any], optional
+            The power to which the inverse hyperbolic cosecant is raised. Default None (equivalent to 1)
+        """        
+        super().__init__("csch", expr, power, inverse=True)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.asinh(1 / expr.value) ** (1 if power is None else power.value)
+
+class HyperbolicArcSecant(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "HyperbolicArcSecant":
+        """The inverse hyperbolic secant of an expression, optionally to some power, such as `\\sech^{-1}(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the inverse hyperbolic secant function.
+        power : Optional[Token  |  Any], optional
+            The power to which the inverse hyperbolic secant is raised. Default None (equivalent to 1)
+        """        
+        super().__init__("sech", expr, power, inverse=True)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.acosh(1 / expr.value) ** (1 if power is None else power.value)
+
+class HyperbolicArcCotangent(_TrigFunction):
+    def __init__(
+        self, expr: Token | str, power: Optional[Token | Any] = None
+    ) -> "HyperbolicArcCotangent":
+        """The inverse hyperbolic cotangent of an expression, optionally to some power, such as `\\coth^{-1}(a)`. The value is calculated using the `math` library.
+
+        Parameters
+        ----------
+        expr : Token | str
+            The operand to the inverse hyperbolic cotangent function.
+        power : Optional[Token  |  Any], optional
+            The power to which the inverse hyperbolic cotangent is raised. Default None (equivalent to 1)
+        """        
+        super().__init__("coth", expr, power, inverse=True)
+
+    def _operation(self, expr: Token, power: Token) -> Any:
+        return math.atanh(1 / expr.value) ** (1 if power is None else power.value)
+
+class Logarithm(CallableToken):
+    def __init__(
+        self, value: Token | str | float, base: Token | str | float = 10
+    ) -> "Logarithm":
+        """A logarithm expression, such as `\\log_{10}(100)`.
+
+        Parameters
+        ----------
+        value : Token | str | float
+            The value to be logged.
+        base : Token | str | float, optional
+            The base of the logarithm. If this is 10, the base will be omitted. If it is the string `"e"`, the natural logarithm is used. Default 10
+        """
+        if isinstance(base, str) and base == "e":
+            return NaturalLogarithm(value)
+        self.value = as_token(value)
+        self.base = as_token(base)
+
+    def __str__(self) -> str:
+        if self.base.value == 10:
+            return f"\\log{{{self.value}}}"
+        return f"\\log_{{{self.base}}}{{{self.value}}}"
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        if self.base.value == "e":
+            return Quantity(math.log(self.value.value))(*args, **kwargs)
+        return Quantity(math.log(self.value.value, self.base.value))(*args, **kwargs)
+    
+class NaturalLogarithm(Logarithm):
+    def __init__(
+        self, value: Token | str | float
+    ) -> "NaturalLogarithm":
+        super().__init__(value, "e")
+
+    def __str__(self) -> str:
+        return f"\\ln{{{self.value}}}"
+    
+class Exponential:
+    def __init__(
+        self, value: Token | str | float,
+        use_exp: Optional[bool] = None 
+    ) -> "Exponential":
+        """An exponential expression, such as `\\exp(a)`.
+
+        Parameters
+        ----------
+        value : Token | str | float
+            The value to be exponentiated.
+        use_exp : Optional[bool], optional
+            Whether to use the `exp` macro or `e` raised to the power of the value. If `None`, the default value (defined in `USE_EXP_FOR_EXPONENTIAL`) is used. Default None
+        """
+        self.value = as_token(value)
+        self.use_exp = use_exp
+
+    def __str__(self) -> str:
+        use_exp = self.use_exp if self.use_exp is not None else USE_EXP_FOR_EXPONENTIAL
+        if use_exp:
+            return _Container(Macro("exp"), Bracket(self.value, scale=True))
+        return Power(Macro("mathrm", "e"), self.value)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        return Quantity(math.exp(self.value.value))(*args, **kwargs)
+    
+class Function(Token):
+    def __init__(self, name: Token | str, *args: Token | str | Any) -> "Function":
+        """A function expression, such as `f(a, b)`.
+        
+        Parameters
+        ----------
+        name : Token | str
+            The name of the function.
+        *args : Token | str | Any
+            The arguments to the function.
+        """
+        self.name = as_token(name)
+        self.args = [as_token(arg) for arg in args]
+    
+    def __str__(self) -> str :
+        if len(self.args) == 1:
+            return str(self.name * (self.args[0], ))
+        return str(
+            self.name * (Sequence(*self.args), )
+        )
+
+
+# =============================================================================
+
 
 # Greek Letters
+
 
 alpha = Macro("alpha")
 beta = Macro("beta")
@@ -860,7 +2134,7 @@ lambda_ = Macro("lambda")
 mu = Macro("mu")
 nu = Macro("nu")
 xi = Macro("xi")
-pi = Macro("pi")
+pi = Variable("\\pi", 3.1415926535897932384626433832795028841971693993751058209749445)
 varpi = Macro("varpi")
 rho = Macro("rho")
 varrho = Macro("varrho")
@@ -889,188 +2163,835 @@ nabla = Macro("nabla")
 
 i = Literal("i")
 
-# Common Math Macros
+# == Functions ================================================================
 
-def power(base: str | Token, exponent: str | Token) -> str:
+def power(base: Token | str | float, exponent: Token | str | float) -> Power:
+    """Raise a base to an exponent, such as `a^b`.
+
+    Parameters
+    ----------
+    base : Token | str | float
+        The base of the power.
+    exponent : Token | str | float
+        The exponent of the power.
+
+    Returns
+    -------
+    Power
+        The base raised to the exponent.
+    """    
     return Power(base, exponent)
 
-def index(base: str | Token, subscript: str | Token) -> str:
-    return Index(base, subscript)
+def index(base: Token | str | float, index: Token | str | float) -> Index:
+    """Add an index to a base, such as `a_b`.
 
-def math_sup(exponent: str | Token) -> str:
+    Parameters
+    ----------
+    base : Token | str | float
+        The base of the index.
+    index : Token | str | float
+        The index of the base.
+
+    Returns
+    -------
+    Index
+        The base with the index.
+    """
+    return Index(base, index)
+
+def math_sup(exponent: Token | str | float) -> Power:
+    """Raise the following expression to an exponent, such as `{}^b`.
+    
+    Parameters
+    ----------
+    exponent : Token | str | float
+        The exponent of the power.
+
+    Returns
+    -------
+    Power
+        The base raised to the exponent.
+    """
     return Power("", exponent)
 
-def math_sub(subscript: str | Token) -> str:
-    return Subscript(subscript)
+def math_sub(index: Token | str | float) -> Index:
+    """Add an index to the following expression, such as `{}_b`.
 
-def sqrt(expr: str | Token, nroot: int = None) -> Macro:
-    args = []
-    if nroot:
-        args.append((True, nroot))
-    args.append(expr)
-    return Macro("sqrt", *args)
+    Parameters
+    ----------
+    index : Token | str | float
+        The index of the base.
 
-def frac(numerator: str | Token, denominator: str | Token) -> str:
-    return Divide(numerator, denominator)
+    Returns
+    -------
+    Index
+        The base with the index.
+    """
+    return Index("", index)
 
-def dfrac(numerator: str | Token, denominator: str | Token) -> str:
-    return Divide(numerator, denominator, display = True)
+def frac(numerator: Token | str | float, denominator: Token | str | float) -> Division:
+    """Create a fraction, such as `\\frac{a}{b}`.
 
-def dot(expr: str | Token) -> str:
+    Parameters
+    ----------
+    numerator : Token | str | float
+        The numerator of the fraction.
+    denominator : Token | str | float
+        The denominator of the fraction.
+    
+    Returns
+    -------
+    Division
+        The fraction.
+    """
+    return Division(numerator, denominator)
+
+def dfrac(numerator: Token | str | float, denominator: Token | str | float) -> Division:
+    """Create a fraction with display mode, such as `\\dfrac{a}{b}`.
+
+    Parameters
+    ----------
+    numerator : Token | str | float
+        The numerator of the fraction.
+    denominator : Token | str | float
+        The denominator of the fraction.
+    
+    Returns
+    -------
+    Division
+        The fraction.
+    """    
+    return Division(numerator, denominator, display_mode=True)
+
+def dot(expr: Token | str | float) -> Macro:
+    """Add a dot above the following expression, such as `\\dot{a}`.
+
+    Parameters
+    ----------
+    expr : Token | str | float
+        The expression to which the dot is added.
+    
+    Returns
+    -------
+    Macro
+        The expression with a dot above it.
+    """
     return Macro("dot", expr)
 
-def ddot(expr: str | Token) -> str:
+def ddot(expr: Token | str | float) -> Macro:
+    """Add a double dot above the following expression, such as `\\ddot{a}`.
+
+    Parameters
+    ----------
+    expr : Token | str | float
+        The expression to which the double dot is added.
+    
+    Returns
+    -------
+    Macro
+        The expression with a double dot above it.
+    """
     return Macro("ddot", expr)
 
-def hat(expr: str | Token) -> str:
+def hat(expr: Token | str | float) -> Macro:
+    """Add a hat above the following expression, such as `\\hat{a}`.
+
+    Parameters
+    ----------
+    expr : Token | str | float
+        The expression to which the hat is added.
+    
+    Returns
+    -------
+    Macro
+        The expression with a hat above it.
+    """
     return Macro("hat", expr)
 
-def bar(expr: str | Token) -> str:
+def bar(expr: Token | str | float) -> Macro:
+    """Add a bar above the following expression, such as `\\bar{a}`.
+
+    Parameters
+    ----------
+    expr : Token | str | float
+        The expression to which the bar is added.
+    
+    Returns
+    -------
+    Macro
+        The expression with a bar above it.
+    """
     return Macro("bar", expr)
 
-def vec(expr: str | Token) -> str:
+def vec(expr: Token | str | float) -> Macro:
+    """Add a vector arrow above the following expression, such as `\\vec{a}`.
+
+    Parameters
+    ----------
+    expr : Token | str | float
+        The expression to which the vector arrow is added.
+    
+    Returns
+    -------
+    Macro
+        The expression with a vector arrow above it.
+    """
     return Macro("vec", expr)
 
-def tilde(expr: str | Token) -> str:
+def underline(expr: Token | str | float) -> Macro:
+    """Add an underline below the following expression, such as `\\underline{a}`.
+
+    Parameters
+    ----------
+    expr : Token | str | float
+        The expression to which the underline is added.
+    
+    Returns
+    -------
+    Macro
+        The underlined expression.
+    """
+    return Macro("underline", expr)
+
+def tilde(expr: Token | str | float) -> Macro:
+    """Add a tilde above the following expression, such as `\\tilde{a}`.
+
+    Parameters
+    ----------
+    expr : Token | str | float
+        The expression to which the tilde is added.
+    
+    Returns
+    -------
+    Macro
+        The expression with a tilde above it.
+    """
     return Macro("tilde", expr)
 
-def widehat(expr: str | Token) -> str:
+def widehat(expr: Token | str | float) -> Macro:
+    """Add a wide hat above the following expression, such as `\\widehat{a}`.
+
+    Parameters
+    ----------
+    expr : Token | str | float
+        The expression to which the wide hat is added.
+    
+    Returns
+    -------
+    Macro
+        The expression with a wide hat above it.
+    """
     return Macro("widehat", expr)
 
-def overline(expr: str | Token) -> str:
-    return Macro("overline", expr)
+def widebar(expr: Token | str | float) -> Macro:
+    """Add a wide bar above the following expression, such as `\\widebar{a}`.
 
-def widetilde(expr: str | Token) -> str:
+    Parameters
+    ----------
+    expr : Token | str | float
+        The expression to which the wide bar is added.
+    
+    Returns
+    -------
+    Macro
+        The expression with a wide bar above it.
+    """
+    return Macro("widebar", expr)
+
+overline = widebar
+
+def widetilde(expr: Token | str | float) -> Macro:
+    """Add a wide tilde above the following expression, such as `\\widetilde{a}`.
+
+    Parameters
+    ----------
+    expr : Token | str | float
+        The expression to which the wide tilde is added.
+    
+    Returns
+    -------
+    Macro
+        The expression with a wide tilde above it.
+    """
     return Macro("widetilde", expr)
 
-class _Trig_Function(NonCallableToken):
-    # Not all of these are actually trig functions, but I don't know what else to call them
-    def __init__(self, name: str, expr: str | Token, power: Any = None):
-        self.name = name
-        
-        self.expr = as_expression(expr)
+def sin(expr: Token | str | float, power: Optional[Token | str | float] = None) -> Sine:
+    """The sine of an expression, optionally to some power, such as `\\sin^2(a)`. The value is calculated using the `math` library.
 
-        self.power = None if power is None else as_expression(power)
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the sine function.
+    power : Optional[Token  |  Any], optional
+        The power to which the sine is raised. Note that `power = -1` is *not* equivalent to `arcsin(a)`, but rather `1/sin(a)`. For the inverse sine function, use `ArcSine` instead. Default None (equivalent to 1)
 
-    def __str__(self) -> str:
-        if self.power is None:
-            return _Container(Macro(self.name), Bracket(self.expr, scale = True)).__str__()
-        return _Container(Power(Macro(self.name), self.power), Bracket(self.expr, scale = True)).__str__()
+    Returns
+    -------
+    Sine
+        The sine of the expression.
+    """        
+    return Sine(expr, power)
 
-def sin(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("sin", expr, power)
+def cos(expr: Token | str | float, power: Optional[Token | str | float] = None) -> Cosine:
+    """The cosine of an expression, optionally to some power, such as `\\cos^2(a)`. The value is calculated using the `math` library.
 
-def cos(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("cos", expr, power)
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the cosine function.
+    power : Optional[Token  |  Any], optional
+        The power to which the cosine is raised. Note that `power = -1` is *not* equivalent to `arccos(a)`, but rather `1/cos(a)`. For the inverse cosine function, use `ArcCosine` instead. Default None (equivalent to 1)
 
-def tan(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("tan", expr, power)
+    Returns
+    -------
+    Cosine
+        The cosine of the expression.
+    """        
+    return Cosine(expr, power)
 
-def csc(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("csc", expr, power)
+def tan(expr: Token | str | float, power: Optional[Token | str | float] = None) -> Tangent:
+    """The tangent of an expression, optionally to some power, such as `\\tan^2(a)`. The value is calculated using the `math` library.
 
-def sec(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("sec", expr, power)
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the tangent function.
+    power : Optional[Token  |  Any], optional
+        The power to which the tangent is raised. Note that `power = -1` is *not* equivalent to `arctan(a)`, but rather `1/tan(a)`. For the inverse tangent function, use `ArcTangent` instead. Default None (equivalent to 1)
 
-def cot(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("cot", expr, power)
+    Returns
+    -------
+    Tangent
+        The tangent of the expression.
+    """
+    return Tangent(expr, power)
 
-def exp(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("exp", expr, power)
+def arcsin(expr: Token | str | float, power: Optional[Token | str | float] = None) -> ArcSine:
+    """The inverse sine of an expression, optionally to some power, such as `\\sin^{-1}(a)`. The value is calculated using the `math` library.
 
-def log(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("log", expr, power)
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the inverse sine function.
+    power : Optional[Token  |  Any], optional
+        The power to which the inverse sine is raised. Default None (equivalent to 1)
 
-def ln(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("ln", expr, power)
+    Returns
+    -------
+    ArcSine
+        The inverse sine of the expression.
+    """
+    return ArcSine(expr, power)
 
-def lg(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("lg", expr, power)
+def arccos(expr: Token | str | float, power: Optional[Token | str | float] = None) -> ArcCosine:
+    """The inverse cosine of an expression, optionally to some power, such as `\\cos^{-1}(a)`. The value is calculated using the `math` library.
 
-def sinh(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("sinh", expr, power)
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the inverse cosine function.
+    power : Optional[Token  |  Any], optional
+        The power to which the inverse cosine is raised. Default None (equivalent to 1)
 
-def cosh(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("cosh", expr, power)
+    Returns
+    -------
+    ArcCosine
+        The inverse cosine of the expression.
+    """
+    return ArcCosine(expr, power)
 
-def tanh(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("tanh", expr, power)
+def arctan(expr: Token | str | float, power: Optional[Token | str | float] = None) -> ArcTangent:
+    """The inverse tangent of an expression, optionally to some power, such as `\\tan^{-1}(a)`. The value is calculated using the `math` library.
 
-def coth(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("coth", expr, power)
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the inverse tangent function.
+    power : Optional[Token  |  Any], optional
+        The power to which the inverse tangent is raised. Default None (equivalent to 1)
 
-def arcsin(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("arcsin", expr, power)
+    Returns
+    -------
+    ArcTangent
+        The inverse tangent of the expression.
+    """
+    return ArcTangent(expr, power)
 
-def arccos(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("arccos", expr, power)
+asin = arcsin   
+acos = arccos
+atan = arctan
 
-def arctan(expr: str | Token, power: Any = None) -> str:
-    return _Trig_Function("arctan", expr, power)
+def csc(expr: Token | str | float, power: Optional[Token | str | float] = None) -> Cosecant:
+    """The cosecant of an expression, optionally to some power, such as `\\csc^2(a)`. The value is calculated using the `math` library.
 
-def supsub(base: str | Token, superscript: str | Token, subscript: str | Token) -> str:
-    return _BinaryOperator("_", _BinaryOperator("^", base, superscript, group_left = True, group_right = True), subscript, group_right = True)
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the cosecant function.
+    power : Optional[Token  |  Any], optional
+        The power to which the cosecant is raised. Note that `power = -1` is *not* equivalent to `arccsc(a)`, but rather `1/csc(a)`. For the inverse cosecant function, use `ArcCosecant` instead. Default None (equivalent to 1)
 
-def bracket(expr: str | Token, scale: bool = False) -> str:
-    return Bracket(expr, scale)
+    Returns
+    -------
+    Cosecant
+        The cosecant of the expression.
+    """
+    return Cosecant(expr, power)
+
+def sec(expr: Token | str | float, power: Optional[Token | str | float] = None) -> Secant:
+    """The secant of an expression, optionally to some power, such as `\\sec^2(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the secant function.
+    power : Optional[Token  |  Any], optional
+        The power to which the secant is raised. Note that `power = -1` is *not* equivalent to `arcsec(a)`, but rather `1/sec(a)`. For the inverse secant function, use `ArcSecant` instead. Default None (equivalent to 1)
+
+    Returns
+    -------
+    Secant
+        The secant of the expression.
+    """
+    return Secant(expr, power)
+
+def cot(expr: Token | str | float, power: Optional[Token | str | float] = None) -> Cotangent:
+    """The cotangent of an expression, optionally to some power, such as `\\cot^2(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the cotangent function.
+    power : Optional[Token  |  Any], optional
+        The power to which the cotangent is raised. Note that `power = -1` is *not* equivalent to `arccot(a)`, but rather `1/cot(a)`. For the inverse cotangent function, use `ArcCotangent` instead. Default None (equivalent to 1)
+
+    Returns
+    -------
+    Cotangent
+        The cotangent of the expression.
+    """
+    return Cotangent(expr, power)
+
+def arccsc(expr: Token | str | float, power: Optional[Token | str | float] = None) -> ArcCosecant:
+    """The inverse cosecant of an expression, optionally to some power, such as `\\csc^{-1}(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the inverse cosecant function.
+    power : Optional[Token  |  Any], optional
+        The power to which the inverse cosecant is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    ArcCosecant
+        The inverse cosecant of the expression.
+    """
+    return ArcCosecant(expr, power)
+
+def arcsec(expr: Token | str | float, power: Optional[Token | str | float] = None) -> ArcSecant:
+    """The inverse secant of an expression, optionally to some power, such as `\\sec^{-1}(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the inverse secant function.
+    power : Optional[Token  |  Any], optional
+        The power to which the inverse secant is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    ArcSecant
+        The inverse secant of the expression.
+    """
+    return ArcSecant(expr, power)
+
+def arccot(expr: Token | str | float, power: Optional[Token | str | float] = None) -> ArcCotangent:
+    """The inverse cotangent of an expression, optionally to some power, such as `\\cot^{-1}(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the inverse cotangent function.
+    power : Optional[Token  |  Any], optional
+        The power to which the inverse cotangent is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    ArcCotangent
+        The inverse cotangent of the expression.
+    """
+    return ArcCotangent(expr, power)
+
+acsc = arccsc
+asec = arcsec
+acot = arccot
+
+def sinh(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicSine:
+    """The hyperbolic sine of an expression, optionally to some power, such as `\\sinh^2(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the hyperbolic sine function.
+    power : Optional[Token  |  Any], optional
+        The power to which the hyperbolic sine is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    HyperbolicSine
+        The hyperbolic sine of the expression.
+    """
+    return HyperbolicSine(expr, power)
+
+def cosh(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicCosine:
+    """The hyperbolic cosine of an expression, optionally to some power, such as `\\cosh^2(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the hyperbolic cosine function.
+    power : Optional[Token  |  Any], optional
+        The power to which the hyperbolic cosine is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    HyperbolicCosine
+        The hyperbolic cosine of the expression.
+    """
+    return HyperbolicCosine(expr, power)
+
+def tanh(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicTangent:
+    """The hyperbolic tangent of an expression, optionally to some power, such as `\\tanh^2(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the hyperbolic tangent function.
+    power : Optional[Token  |  Any], optional
+        The power to which the hyperbolic tangent is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    HyperbolicTangent
+        The hyperbolic tangent of the expression.
+    """
+    return HyperbolicTangent(expr, power)
+
+def csch(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicCosecant:
+    """The hyperbolic cosecant of an expression, optionally to some power, such as `\\csch^2(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the hyperbolic cosecant function.
+    power : Optional[Token  |  Any], optional
+        The power to which the hyperbolic cosecant is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    HyperbolicCosecant
+        The hyperbolic cosecant of the expression.
+    """
+    return HyperbolicCosecant(expr, power)
+
+def sech(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicSecant:
+    """The hyperbolic secant of an expression, optionally to some power, such as `\\sech^2(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the hyperbolic secant function.
+    power : Optional[Token  |  Any], optional
+        The power to which the hyperbolic secant is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    HyperbolicSecant
+        The hyperbolic secant of the expression.
+    """
+    return HyperbolicSecant(expr, power)
+
+def coth(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicCotangent:
+    """The hyperbolic cotangent of an expression, optionally to some power, such as `\\coth^2(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the hyperbolic cotangent function.
+    power : Optional[Token  |  Any], optional
+        The power to which the hyperbolic cotangent is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    HyperbolicCotangent
+        The hyperbolic cotangent of the expression.
+    """
+    return HyperbolicCotangent(expr, power)
+
+def arcsinh(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicArcSine:
+    """The inverse hyperbolic sine of an expression, optionally to some power, such as `\\sinh^{-1}(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the inverse hyperbolic sine function.
+    power : Optional[Token  |  Any], optional
+        The power to which the inverse hyperbolic sine is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    HyperbolicArcSine
+        The inverse hyperbolic sine of the expression.
+    """
+    return HyperbolicArcSine(expr, power)
+
+def arccosh(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicArcCosine:
+    """The inverse hyperbolic cosine of an expression, optionally to some power, such as `\\cosh^{-1}(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the inverse hyperbolic cosine function.
+    power : Optional[Token  |  Any], optional
+        The power to which the inverse hyperbolic cosine is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    HyperbolicArcCosine
+        The inverse hyperbolic cosine of the expression.
+    """
+    return HyperbolicArcCosine(expr, power)
+
+def arctanh(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicArcTangent:
+    """The inverse hyperbolic tangent of an expression, optionally to some power, such as `\\tanh^{-1}(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the inverse hyperbolic tangent function.
+    power : Optional[Token  |  Any], optional
+        The power to which the inverse hyperbolic tangent is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    HyperbolicArcTangent
+        The inverse hyperbolic tangent of the expression.
+    """
+    return HyperbolicArcTangent(expr, power)
+
+def arccsch(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicArcCosecant:
+    """The inverse hyperbolic cosecant of an expression, optionally to some power, such as `\\csch^{-1}(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the inverse hyperbolic cosecant function.
+    power : Optional[Token  |  Any], optional
+        The power to which the inverse hyperbolic cosecant is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    HyperbolicArcCosecant
+        The inverse hyperbolic cosecant of the expression.
+    """
+    return HyperbolicArcCosecant(expr, power)
+
+def arcsech(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicArcSecant:
+    """The inverse hyperbolic secant of an expression, optionally to some power, such as `\\sech^{-1}(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the inverse hyperbolic secant function.
+    power : Optional[Token  |  Any], optional
+        The power to which the inverse hyperbolic secant is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    HyperbolicArcSecant
+        The inverse hyperbolic secant of the expression.
+    """
+    return HyperbolicArcSecant(expr, power)
+
+def arccoth(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicArcCotangent:
+    """The inverse hyperbolic cotangent of an expression, optionally to some power, such as `\\coth^{-1}(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    expr : Token | str
+        The operand to the inverse hyperbolic cotangent function.
+    power : Optional[Token  |  Any], optional
+        The power to which the inverse hyperbolic cotangent is raised. Default None (equivalent to 1)
+
+    Returns
+    -------
+    HyperbolicArcCotangent
+        The inverse hyperbolic cotangent of the expression.
+    """
+    return HyperbolicArcCotangent(expr, power)
+
+asinh = arcsinh
+acosh = arccosh
+atanh = arctanh
+acsch = arccsch
+asech = arcsech
+acoth = arccoth
+
+def log(value: Token | str | float, base: Token | str | float = 10) -> Logarithm:
+    """The logarithm of an expression, optionally to some base, such as `\\log_{10}(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    value : Token | str
+        The operand to the logarithm function.
+    base : Token | str, optional
+        The base of the logarithm. If this is the string `"e"`, the natural logarithm will be used instead. Default 10
+
+    Returns
+    -------
+    Logarithm
+        The logarithm of the expression.
+    """
+    return Logarithm(value, base)
+
+def ln(value: Token | str | float) -> NaturalLogarithm:
+    """The natural logarithm of an expression, such as `\\ln(a)`. The value is calculated using the `math` library.
+
+    Parameters
+    ----------
+    value : Token | str
+        The operand to the natural logarithm function.
+
+    Returns
+    -------
+    NaturalLogarithm
+        The natural logarithm of the expression.
+    """
+    return NaturalLogarithm(value)
+
+def bracket(*children: Token | str | float) -> Bracket:
+    """A set of brackets, such as `(a, b, c)`.
+
+    Parameters
+    ----------
+    *children : Token | str | float
+        The children of the bracket.
+
+    Returns
+    -------
+    Bracket
+        The bracket containing the children.
+    """
+    return Bracket(*children)
 
 paren = bracket
 
-def square_bracket(expr: str | Token, scale: bool = False) -> str:
-    return SquareBracket(expr, scale)
+def square_bracket(*children: Token | str | float) -> SquareBracket:
+    """A set of square brackets, such as `[a, b, c]`.
 
-def curly_bracket(expr: str | Token, scale: bool = False) -> str:
-    return CurlyBracket(expr, scale)
+    Parameters
+    ----------
+    *children : Token | str | float
+        The children of the square bracket.
+
+    Returns
+    -------
+    SquareBracket
+        The square bracket containing the children.
+    """
+    return SquareBracket(*children)
+
+def curly_bracket(*children: Token | str | float) -> CurlyBracket:
+    """A set of curly brackets, such as `{a, b, c}`.
+
+    Parameters
+    ----------
+    *children : Token | str | float
+        The children of the curly bracket.
+
+    Returns
+    -------
+    CurlyBracket
+        The curly bracket containing the children.
+    """
+    return CurlyBracket(*children)
 
 brace = curly_bracket
 
-def absolute(expr: str | Token, scale: bool = True) -> str:
-    return Absolute(expr, scale)
+def absolute(*children: Token | str | float) -> AbsoluteValue:
+    """The absolute value of an expression, such as `|a|`.
 
-def angle_bracket(expr: str | Token, scale: bool = False) -> str:
-    return AngleBracket(expr, scale)
+    Parameters
+    ----------
+    *children : Token | str | float
+        The children of the absolute value.
 
-def sum(expr: str | Token, lower: str | Token = None, upper: str | Token = None) -> str:
-    return LimitsExpression("sum", expr, lower, upper)
+    Returns
+    -------
+    AbsoluteValue
+        The absolute value containing the children.
+    """
+    return AbsoluteValue(*children)
 
-# def integral(expr: str | Token, int_var: str | Token, lower: str | Token = None, upper: str | Token = None) -> str:
-#     return Integral(expr, int_var, lower, upper)
+def angle_bracket(*children: Token | str | float) -> AngleBracket:
+    """A set of angle brackets, such as `<a, b, c>`.
 
+    Parameters
+    ----------
+    *children : Token | str | float
+        The children of the angle bracket.
 
-sym = as_expression
+    Returns
+    -------
+    AngleBracket
+        The angle bracket containing the children.
+    """
+    return AngleBracket(*children)
 
-var = Variable
+sym = as_token
+def var(
+        name: str,
+        value: float,
+        fmt: Optional[str] = None,
+        unit: Optional[pint.Unit | str] = None,
+) -> Variable:
+    """A variable with a name, value, and optional unit and format specifier.
 
-def split(lines: List[str | Token | Tuple[str | Token]], environment = "split") -> str:
-    if not isinstance(lines, (list, tuple)):
-        lines = [lines]
-    for i, line in enumerate(lines):
-        if isinstance(line, (list, tuple)):
-            lines[i] = " & ".join([str(expr) for expr in line])
-        else:
-            lines[i] = str(line)
-    return f"\\begin{{{environment}}}\n\t" + "\\\\\n\t".join(lines) + f"\n\\end{{{environment}}}"
+    Parameters
+    ----------
+    name : str
+        The name of the variable. This will be used when rendering the variable directly.
+    value : float
+        The value of the variable. This will be used when the variable is called as a function.
+    fmt : Optional[str], optional
+        The format specifier to use when rendering the variable. If None, the default format specifier will be used. If `fmt = ''`, no format specifier will be used. Default None
+    unit : Optional[pint.Unit  |  str], optional
+        The unit of the variable. This can be a pint.Unit object, a string in siunitx format (e.g. `\meter\per\second\squared`), written fully (meter per second squared), or abbreviated (m/s^2 or m s^-2). If None, the value will be assumed to be dimensionless. Default None
+    """
+    return Variable(name, value, fmt, unit)
 
-# def function(name: str | Token, *args: str | Token) -> str:
-#     if len(args) == 1:
-#         return literal(name) * (literal(args[0]), )
-#     return literal(name) * Bracket(literal(args), scale = True)
-
-
-# def fmt(expr: str | Token, format: str) -> str:
-#     return literal(expr, format)
-
-
-# empty = Literal("")
-
+comma = Literal("\\,,")
+period = Literal("\\,.")
+newline = Literal("\\\\")
+empty = Literal("")
 alignment = Literal("&")
+
+zero, one, two, three, four, five, six, seven, eight, nine = map(Literal, range(10))
+inf = Macro("infty")
+infinity = inf
+infty = inf
+
+# == Symbols parsing ==========================================================
 
 def __pythonify_name(name: str) -> str:
     # convert a string into a valid python variable name
     replacements = [
         (" ", "_"),
-        ("-","_"),
+        ("-", "_"),
         ("\\", ""),
+        ("{", ""),
+        ("}", ""),
     ]
     for old, new in replacements:
         name = name.replace(old, new)
@@ -1081,23 +3002,32 @@ def __pythonify_name(name: str) -> str:
             name = name.replace(c, "")
     return name
 
-def define_symbols(statements: str, namespace: dict | None = None) -> None:
-    # This is absolutely not safe, but anyone with access to this function has access to the entire python environment anyway
-    statements_list = statements.split("\n")
-    statements_list = [stmt.split(";") for stmt in statements_list]
+__value_pattern = re.compile(r"^(?P<value>[\d\.ed\+\-,]+)(?:[^\S\n\r]+(?P<units>[^\(\n]*?)?(?:[^\S\n\r]*\((?P<fmt>.*)\))?)?$")
+
+def define_symbols(
+        statements: str,
+        namespace: Optional[Dict[str, Any]] = None,
+        # write_to_namespace: bool = False
+    ) -> None | Tuple[Token]:
+    # Each line consists of `var = value units (fmt);`, `value`, `units`, `fmt` optional.
+    # If all three are omitted, the line can be `var;`
+    # They don't have to be separated by newlines.
+    statement_list = statements.split("\n")
+    statement_list = [stmt.split(";") for stmt in statement_list]
     # collapse the list to 1d
-    statements_list = [stmt.strip() for stmts in statements_list for stmt in stmts]
+    statement_list = [stmt.strip() for stmts in statement_list for stmt in stmts]
     # remove comments which start with #
-    statements_list = [stmt.split("#")[0].strip() for stmt in statements_list]
+    statement_list = [stmt.split("#")[0].strip() for stmt in statement_list]
+
     # remove empty lines
-    statements_list = [stmt for stmt in statements_list if stmt]
+    statement_list = [stmt for stmt in statement_list if stmt]
     assignments = []
-    for statement in statements_list:
+    for statement in statement_list:
         if not "=" in statement:
             new_name = __pythonify_name(statement)
             if namespace is not None and new_name in namespace:
                 raise ValueError(f"Symbol {new_name} already defined")
-            new_symbol = as_expression(statement)
+            new_symbol = as_token(statement)
             if namespace is not None:
                 namespace[new_name] = new_symbol
             assignments.append(new_symbol)
@@ -1105,16 +3035,49 @@ def define_symbols(statements: str, namespace: dict | None = None) -> None:
         name, value = statement.split("=")
         name = name.strip()
         value = value.strip()
-        matched = re.match(r"(\"|\').*?(\1)", value)
-        if matched:
-            value = value[1:-1]
+        # TODO: Handle string values. We *shouldn't* get a string with units or a fmt specifier, but we could.
+        # For now, raise an exception
+        if "'" in value or '"' in value:
+            raise NotImplementedError("String values are not yet supported")
+        # parse the value
+        matched = __value_pattern.match(value)
+        if matched is None:
+            raise ValueError(f"Could not parse value `{value}`")
+        value = matched.group("value")
+        units = matched.group("units")
+        fmt = matched.group("fmt")
         new_name = __pythonify_name(name)
         if namespace is not None and new_name in namespace:
             raise ValueError(f"Symbol {new_name} already defined")
-        new_symbol = Variable(name, value)
+        value = float(value)
+        if value.is_integer():
+            value = int(value)
+        new_symbol = var(name, value, unit=units, fmt=fmt)
         if namespace is not None:
             namespace[new_name] = new_symbol
         assignments.append(new_symbol)
-    return assignments
+    return tuple(assignments)
 
 symbols = define_symbols
+
+def split(lines: List[str | Token | Tuple[str | Token]], environment="split", separator: str | None = "=") -> str:
+    if not isinstance(lines, (list, tuple)):
+        lines = [lines]
+    for i, line in enumerate(lines):
+        if isinstance(line, (list, tuple)):
+            if len(line) == 1:
+                lines[i] = f"& {separator if separator is not None else '='} {line[0]}"
+            else:
+                if separator is None:
+                    lines[i] = " & ".join(str(expr) for expr in line)
+                if len(line) == 2:
+                    lines[i] = f"{line[0]} & {separator} {line[1]}"
+                else:
+                    lines[i] = f"{line[0]} & {separator} {line[1]} & " + " & ".join(str(expr) for expr in line[2:])
+        else:
+            lines[i] = str(line)
+    return (
+        f"\\begin{{{environment}}}\n\t"
+        + "\\\\\n\t".join(lines)
+        + f"\n\\end{{{environment}}}"
+    )

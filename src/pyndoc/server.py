@@ -25,7 +25,7 @@ import pyndoc.latex as tex
 
 # Configuration
 HOST: str = '127.0.0.1'
-MAX_TIMEOUT: int = 5
+MAX_TIMEOUT: int = 60
 METADATA_FILE: Path = Path(".pyndoc.json")
 
 md.TARGET_FORMAT = None
@@ -104,7 +104,7 @@ def capture_output(code):
     try:
         exec(code, globals())
     except Exception as e:
-        logging.error(f"{e}")
+        logging.exception(e)
         sys.stdout = old_stdout
         raise e
     finally:
@@ -138,7 +138,7 @@ def capture_value(code):
     try:
         output = eval(code, globals())
     except Exception as e:
-        logging.error(f"{e}")
+        logging.exception(e)
         sys.stdout = old_stdout
         raise e
     finally:

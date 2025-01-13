@@ -432,7 +432,7 @@ def footnote(
     return pf.Note(pf.Plain(*text))
 
 
-def math(text: str, display: bool = False):
+def math(text: str, display: bool = False, label: Optional[str] = None):
     if isinstance(display, str):
         display = display.lower() == "true"
     if not isinstance(text, str):
@@ -442,12 +442,20 @@ def math(text: str, display: bool = False):
         format="DisplayMath" if display else "InlineMath",
     )
     if display:
+        if label is not None:
+            if not label.startswith("#eq:"):
+                label = f"#eq:{label}"
+            return pf.Para(el, pf.Str("{" + label + "}"))
         return pf.Para(el)
     return el
 
 
-def equation(text: str):
-    return math(text, display=True)
+def equation(text: str, label: Optional[str] = None):
+    return math(text, display=True, label=label)
+
+# TODO: Add label support for equations. See how pandoc-crossref does it?
+# Done (?)
+# Add to figures too? May or may not be necessary
 
 
 def inline_math(text: str):

@@ -23,6 +23,15 @@ from pyndoc.formats import Format
 import pyndoc.markdown as md
 import pyndoc.latex as tex
 
+# print_normal = print
+# def print(*args, **kwargs):
+#     if len(args) == 1:
+#         arg1 = args[0]
+#         if isinstance(arg1, tex.Token):
+#             print_normal("\\(" + str(arg1) + "\\)", **kwargs)
+#             return
+#     print_normal(*args, **kwargs)
+
 # Configuration
 HOST: str = '127.0.0.1'
 MAX_TIMEOUT: int = 60
@@ -196,6 +205,8 @@ def object_handler(connection: socket.socket, message: Dict) -> bool:
         logging.error(e)
         send_response(connection, f"Error: {e}", 'error')
         return True
+    if isinstance(output, tex.Token):
+        output = md.inline_math(output)
     if isinstance(output, panflute.Element):
         output = output.to_json()
         logging.debug("Received object request:\n" + message['message'])

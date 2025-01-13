@@ -274,13 +274,15 @@ def main():
 
     # add the filter to the filters list
     filter_file = Path(__file__).parent / "filter.py"
-    current_filters = get_arg(args, ("--filter", "-F"))
-    if current_filters is not None:
-        current_filters = current_filters.split(",")
-        current_filters.append(str(filter_file))
-        replace_arg(args, ("--filter", "-F"), ",".join(current_filters))
-    else:
-        args.append(f"--filter={filter_file}")
+    # current_filters = get_arg(args, ("--filter", "-F"))
+    # if current_filters is not None:
+    #     current_filters = current_filters.split(",")
+    #     current_filters.append(str(filter_file))
+    #     replace_arg(args, ("--filter", "-F"), ",".join(current_filters))
+    # else:
+    #     args.append(f"--filter={filter_file}")
+    # This is not how pandoc filters work. It does not take a list of filters, instead the filter can be passed multiple times. This filter should be first, however.
+    args.insert(0, f"--filter={filter_file}")
 
     start_time = time.perf_counter_ns()
     logging.debug("Getting or starting server.")

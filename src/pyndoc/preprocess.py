@@ -183,7 +183,7 @@ def find_matching_bracket(contents: str, start: int, strict: bool = False, is_do
         if c == "\\":  # skip the next character
             i += 2
             continue
-        if strict and c in ["'", '"']:
+        if not strict and c in ["'", '"']:
             i = find_string_end(contents, i) + 1
             continue
         if c == opening:
@@ -397,6 +397,46 @@ def read_pyndoc_macro(contents: str, start: int) -> tuple[int, str]:
         
     is_solo = is_only_text_on_line(contents, start, i - 1)
     # i -= 1 # not 100% sure why this is necessary, but it seems to be
+    return i - start, format_as_markdown(
+        macro_string, is_double, is_quiet, is_solo, specifier=specifier, is_inline=is_inline
+    )
+
+def read_pyndoc_expression(contents: str, start: int) -> tuple[int, str]:
+    # %%(a == b)
+    
+    is_inline = None
+    if contents[start] == "i":
+        is_inline = True
+    if contents[start] == "b":
+        is_inline = False
+    
+    is_double = contents[start + (2 if is_inline is not None else 1)] == "%"
+    is_quiet = False
+    i = start + 2 if is_double else start + 1
+    i += 1 if is_inline is not None else 0
+    # find closing bracket
+    bracket_end = find_matching_bracket(contents, i)
+    # Don't include the brackets in the expression
+    macro_string = contents[i + 1 : bracket_end]
+    i = bracket_end + 1
+    stripped = macro_string.strip()
+    stripped_len = len(macro_string) - len(stripped)
+    macro_string = stripped
+    # i -= stripped_len
+    logging.debug(f"Macro string: {macro_string}")
+    logging.debug(f"\tExtracted from: {contents[start:i]}")
+    if i < len(contents) and contents[i] == ":":  
+        # format specifier
+        skip, specifier = get_format_specifier(contents, i)
+        if specifier is not None:
+            i += skip
+    else:
+        specifier = None
+
+    if i < len(contents) and contents[i] == ";":
+        is_quiet = True
+        i += 1
+    is_solo = is_only_text_on_line(contents, start, i - 1)
     return i - start, format_as_markdown(
         macro_string, is_double, is_quiet, is_solo, specifier=specifier, is_inline=is_inline
     )
@@ -669,6 +709,11 @@ def preprocess(contents: str, target_format: str | None = None) -> str:
         if re.match(r"[ib]?\%{1,2}\w", contents[i:]):
             # a pyndoc macro
             skip, replacement = read_pyndoc_macro(contents, i)
+            new_text.write(replacement)
+            i += skip
+            continue
+        if re.match(r"[ib]?\%{1,2}\(", contents[i:]):
+            skip, replacement = read_pyndoc_expression(contents, i)
             new_text.write(replacement)
             i += skip
             continue

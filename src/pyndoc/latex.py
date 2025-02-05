@@ -41,7 +41,9 @@ ARRAY_INDEX_BRACKET_TYPE = "square"
 @pint.register_unit_format("T")
 def format_unit_simple(unit, registry, **options):
     out = []
-    for u, p in unit.items():
+    units = [(u, p) for u, p in unit.items()]
+    units = sorted(units, key=lambda x: x[1], reverse=True)
+    for u, p in units:
         u = f"{ureg.parse_units(u):~}"
         u = (
             u.replace("%", "\\%")

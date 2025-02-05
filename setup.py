@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="pyndoc",
-    version="0.1.4",
+    version="0.1.5",
     packages=["pyndoc"],
     entry_points={"console_scripts": ["pyndoc = pyndoc.__main__:main"]},
     install_requires=[

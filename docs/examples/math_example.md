@@ -59,7 +59,7 @@ The specific heat capacity of water is %%(C == C()). The energy required to rais
     ])
 )
 
-So, the total amount of energy needed is %%E(), or %%E(unit = r'kJ').
+So, the total amount of energy needed is %%E(), or %%E(unit = 'kJ').
 
 ## Question 3
 

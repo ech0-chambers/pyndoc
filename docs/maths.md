@@ -64,9 +64,10 @@ Constantly writing `%%md.math(...)` quickly becomes tedious, and so if Pyndoc is
 ```markdown
 %{
     a, b = tex.symbols("a = 3 cm; b = 4 cm")
+    c = tex.sqrt(a ** 2 + b ** 2)
 }
 
-A right angle triangle with side lengths %%a() and %%b() has a hypotenuse with length %%tex.sqrt(a ** 2 + b ** 2)().
+A right angle triangle with side lengths %%a() and %%b() has a hypotenuse with length %%c().
 ```
 
 > A right angle triangle with side lengths $3\ \mathrm{cm}$ and $4\ \mathrm{cm}$ has a hypotenuse with length $5\ \mathrm{cm}$.
@@ -84,10 +85,10 @@ Most objects used in the `tex` module will be one of three classes:
       hbar = tex.var("\\hbar", 1.0545718e-34, unit = "kg m^2 / s")
   }
   
-  The reduced Planck constant is %%md.math(hbar == hbar()), or %%md.math(hbar(unit = "J s")).
+  The reduced Planck constant is %%(hbar == hbar()), or %%hbar(unit = "eV s").
   ```
 
-  > The reduced Planck constant is $\hbar = 1.055 \times 10^{-34}\ \mathrm{kg}\,\mathrm{m}^{2}\,\mathrm{s}^{-1}$, or $\hbar = 1.055 \times 10^{-34}\ \mathrm{J}\,\mathrm{s}$.
+  > The reduced Planck constant is $\hbar = 1.055 \times 10^{-34}\ \mathrm{kg}\:\mathrm{m}^{2}\:\mathrm{s}^{-1}$, or $\hbar = 6.582 \times 10^{-16}\ \mathrm{eV}\:\mathrm{s}$.
 
   When the `Variable` is used directly, its name is printed. When it is called, its value is formatted and printed (with units, where appropriate --  see [Units](#units)).
 
@@ -100,7 +101,7 @@ tex.symbols("""
     b = 3.4;
     c = 2.3 meter per second;
     d = 4.5 (.3f)
-    e = 3.4e-3 kg m^2 / s (.2e)';
+    e = 3.4e-3 kg m^2 / s (.2e);
     f = 4; g = 3;
 """)
 ```
@@ -154,7 +155,7 @@ This would be rendered as follows:
 
 We can now also write
 ```markdown
-For example, if %%md.math(a == a()) and %%md.math(b == b()), then 
+For example, if %%(a == a()) and %%(b == b()), then 
 %%md.equation(
     ( c == tex.sqrt(a() ** 2 + b() ** 2) ) == c(unit = "cm")
 )
@@ -174,13 +175,13 @@ When creating a `Quantity` or `Variable`, the format specifier can be passed as 
     pi = tex.var("\pi", 3.14159265358979323846, fmt = '.3f')
 }
 
-The value of $\pi$ is approximately %%md.math(pi()).
+The value of $\pi$ is approximately %%pi().
 ```
 > The value of $\pi$ is approximately $3.142$.
 
 Additionally, the `fmt` keyword argument can be passed to the `Quantity` or `Variable` when it is called to override the format specifier passed when the object was created. For example,
 ```markdown
-A terrible approximation for $\pi$ is %%md.math(pi(fmt = '.0f')).
+A terrible approximation for $\pi$ is %%pi(fmt = '.0f').
 ```
 > A terrible approximation for $\pi$ is $3$.
 
@@ -207,9 +208,9 @@ Thanks to `pint`'s excellent unit handling, units are preserved and propagated t
     a.unit = "miles per hour"
 }
 
-The speed is %%md.math(a()).
+The speed is %%a().
 ```
-> The speed is $6.711\ \mathrm{mi}\,\mathrm{h}^{-1}$.
+> The speed is $6.711\ \mathrm{mi}\:\mathrm{h}^{-1}$.
 
 Units can be converted when printing, by passing a `unit` argument to the `Quantity` or `Variable` when it is called. This will convert the value to the new unit, if possible. For example,
 ```markdown
@@ -217,7 +218,7 @@ Units can be converted when printing, by passing a `unit` argument to the `Quant
     eV = tex.Quantity(1, unit = "eV")
 }
 
-An energy of %%md.math(eV()) is equivalent to %%md.math(eV(unit = "J")).
+An energy of %%eV() is equivalent to %%eV(unit = "J").
 ```
 > An energy of $1\ \mathrm{eV}$ is equivalent to $1.602 \times 10^{-19}\ \mathrm{J}$.
 
@@ -246,5 +247,7 @@ Most operators will automatically calculate their value (assuming both operands 
 - `-a` (unary), $-a$
 - `a == b`, `a <= b` etc, though evaluating these is generally not useful
 - `tex.absolute(a)`, $|a|$
+- Trigonometric functions (`tex.sin(a)` etc). Note that these always assume the operand is in radians
+- Logarithmic functions (`tex.ln(a)` etc). These ignore any units of the operand
 
 Additionally, an index does not change the value of the expression. For example, if `a` is a `Token` instance, then `a[2]` will be rendered as $a_2$, but will retain the same value as `a`. The same is true for any bracketed expression, such as `(a, )` or `{a}`. If these have a single child element, their value is the value of the child element. For brackets with multiple elements, the value will be `None`.

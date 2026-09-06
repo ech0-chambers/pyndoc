@@ -2729,7 +2729,7 @@ class FunctionGenerator(Token):
         return Function(self.name, *args, upright_name=self.upright_name, power=power)
 
     def __str__(self):
-        return self.name
+        return str(self.name)
 
 
 class Operator(Function):

@@ -32,7 +32,7 @@ Homepage = "https://github.com/ech0-chambers/pyndoc"
 pyndoc = "pyndoc.__main__:main"
 
 [tool.setuptools]
-packages = ["pyndoc"]
+packages = ["pyndoc", "pyndoc.latex"]
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]

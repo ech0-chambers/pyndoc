@@ -38,7 +38,7 @@ ARRAY_INDEX_SEPARATE = False
 ARRAY_INDEX_BRACKET_TYPE = "square"
 
 
-@pint.register_unit_format("T")
+@pint.register_unit_format("U")
 def format_unit_simple(unit, registry, **options):
     out = []
     units = [(u, p) for u, p in unit.items()]
@@ -60,6 +60,8 @@ def format_unit_simple(unit, registry, **options):
 
 
 class Token(ABC):
+    precedence: int = 100
+
     @abstractmethod
     def __str__(self) -> str:
         pass
@@ -889,7 +891,7 @@ def format_unit(unit: pint.Unit, si: bool = False) -> str:
     """
     if si:
         return f"{unit:Lx}"
-    return f"{unit:T}"
+    return f"{unit:U}"
 
 
 def unit(unit: str | pint.Unit, in_math_mode: bool = False) -> str:
@@ -1005,13 +1007,27 @@ sym = as_token
 
 
 class _UnaryOperator(Quantity, ABC):
+    precedence: int = 30
+    bracket_right: bool = True
+
     def __init__(self, value: CallableToken | str | float) -> "_UnaryOperator":
         self.right = as_token(value)
         self.symbol = ""
         self._value = None
 
+    def _should_group_operand(self, operand: Token) -> bool:
+        operand_precedence = getattr(operand, "precedence", 100)
+        return operand_precedence < self.precedence
+
+    def format_operand(self, operand: Token) -> str:
+        if self._should_group_operand(operand):
+            if self.bracket_right:
+                return f"\\left({operand}\\right)"
+            return f"{{{operand}}}"
+        return str(operand)
+
     def __str__(self) -> str:
-        return f"{self.symbol}{{{self.right}}}"
+        return f"{self.symbol}{self.format_operand(self.right)}"
 
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
         value = self.value
@@ -1053,6 +1069,8 @@ class _UnaryOperator(Quantity, ABC):
 
 
 class Negation(_UnaryOperator):
+    precedence = 30
+
     def __init__(self, value: CallableToken | str | float) -> "Negation":
         """Negates a value, such as `-a`.
 
@@ -1069,6 +1087,8 @@ class Negation(_UnaryOperator):
 
 
 class Positive(_UnaryOperator):
+    precedence = 30
+
     def __init__(self, value: CallableToken | str | float) -> "Positive":
         """Returns the positive value of a quantity, such as `+a`. This is numerically equivalent to `a`, and only differs in rendering. It is *not* equivalent to `abs(a)`. Use `absolute(a)` for the absolute value.
 
@@ -1085,6 +1105,11 @@ class Positive(_UnaryOperator):
 
 
 class _BinaryOperator(CallableToken, ABC):
+    precedence: int = 0
+    is_associative: bool = True
+    bracket_left: bool = True
+    bracket_right: bool = True
+
     def __init__(
         self,
         left: CallableToken | str | float,
@@ -1093,15 +1118,29 @@ class _BinaryOperator(CallableToken, ABC):
         self.left = as_token(left)
         self.right = as_token(right)
         self.symbol = ""
-        self.precedence = 0  # we'll use this to track if we need to add parentheses
-        self.group_left = False
-        self.group_right = False
-        # super().__init__(self.value)
         self._value = None
 
+    def _should_group_operand(self, operand: Token, is_right: bool = False) -> bool:
+        operand_precedence = getattr(operand, "precedence", 100)
+        if operand_precedence < self.precedence:
+            return True
+        if is_right and operand_precedence == self.precedence and not getattr(self, "is_associative", True):
+            return True
+        return False
+
+    def format_operand(self, operand: Token, is_right: bool = False) -> str:
+        if self._should_group_operand(operand, is_right=is_right):
+            use_brackets = self.bracket_right if is_right else self.bracket_left
+            if use_brackets:
+                return f"\\left({operand}\\right)"
+            return f"{{{operand}}}"
+        return str(operand)
+
     def __str__(self) -> str:
-        left = f"{{{self.left}}}" if self.group_left else f"{self.left}"
-        right = f"{{{self.right}}}" if self.group_right else f"{self.right}"
+        left = self.format_operand(self.left, is_right=False)
+        right = self.format_operand(self.right, is_right=True)
+        if not self.symbol:
+            return f"{left} {right}"
         return f"{left} {self.symbol} {right}"
 
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
@@ -1120,8 +1159,6 @@ class _BinaryOperator(CallableToken, ABC):
     @abstractmethod
     def _operation(self, left: CallableToken, right: CallableToken) -> Any:
         pass
-
-    # TODO: Tidy this up, and apply to other classes (UnaryOperator)
 
     @property
     def value(self) -> Any:
@@ -1166,6 +1203,11 @@ class _BinaryOperator(CallableToken, ABC):
 
 
 class Addition(_BinaryOperator):
+    precedence = 10
+    is_associative = True
+    bracket_left = True
+    bracket_right = True
+
     def __init__(
         self, left: CallableToken | str | float, right: CallableToken | str | float
     ) -> "Addition":
@@ -1180,13 +1222,17 @@ class Addition(_BinaryOperator):
         """
         super().__init__(left, right)
         self.symbol = "+"
-        self.precedence = 1
 
     def _operation(self, left: CallableToken, right: CallableToken) -> Any:
         return left.value + right.value
 
 
 class Subtraction(_BinaryOperator):
+    precedence = 10
+    is_associative = False
+    bracket_left = True
+    bracket_right = True
+
     def __init__(
         self, left: CallableToken | str | float, right: CallableToken | str | float
     ) -> "Subtraction":
@@ -1201,13 +1247,17 @@ class Subtraction(_BinaryOperator):
         """
         super().__init__(left, right)
         self.symbol = "-"
-        self.precedence = 1
 
     def _operation(self, left: CallableToken, right: CallableToken) -> Any:
         return left.value - right.value
 
 
 class Multiplication(_BinaryOperator):
+    precedence = 20
+    is_associative = True
+    bracket_left = True
+    bracket_right = True
+
     def __init__(
         self, left: CallableToken | str | float, right: CallableToken | str | float
     ) -> "Multiplication":
@@ -1222,13 +1272,17 @@ class Multiplication(_BinaryOperator):
         """
         super().__init__(left, right)
         self.symbol = ""  # multiplication is implicit, Multiplication(a, b) -> ab. Use Times(a, b) to get a \times b
-        self.precedence = 2
 
     def _operation(self, left: CallableToken, right: CallableToken) -> Any:
         return left.value * right.value
 
 
 class Times(_BinaryOperator):
+    precedence = 20
+    is_associative = True
+    bracket_left = True
+    bracket_right = True
+
     def __init__(
         self, left: CallableToken | str | float, right: CallableToken | str | float
     ) -> "Times":
@@ -1243,13 +1297,16 @@ class Times(_BinaryOperator):
         """
         super().__init__(left, right)
         self.symbol = MULTIPLICATION_OPERATOR
-        self.precedence = 2
 
     def _operation(self, left: CallableToken, right: CallableToken) -> Any:
         return left.value * right.value
 
 
 class Division(_BinaryOperator):
+    precedence = 20
+    bracket_left = False
+    bracket_right = False
+
     def __init__(
         self,
         left: CallableToken | str | float,
@@ -1268,22 +1325,29 @@ class Division(_BinaryOperator):
             If True, the division will be rendered as a display fraction regardless of the context, using `\\dfrac` instead of `\\frac`. Default False
         """
         super().__init__(left, right)
-        if (
-            display_mode
-        ):  # these will not format properly -- we're overriding the __str__ function anyway.
+        if display_mode:
             self.symbol = "\\dfrac"
         else:
             self.symbol = "\\frac"
-        self.precedence = 2
+
+    def _should_group_operand(self, operand: Token, is_right: bool = False) -> bool:
+        return True
 
     def _operation(self, left: CallableToken, right: CallableToken) -> Any:
         return left.value / right.value
 
     def __str__(self) -> str:
-        return f"{self.symbol}{{{self.left}}}{{{self.right}}}"
+        left = self.format_operand(self.left, is_right=False)
+        right = self.format_operand(self.right, is_right=True)
+        return f"{self.symbol}{left}{right}"
 
 
 class Power(_BinaryOperator):
+    precedence = 40
+    is_associative = False
+    bracket_left = True
+    bracket_right = False
+
     def __init__(
         self,
         left: CallableToken | str | float,
@@ -1300,20 +1364,28 @@ class Power(_BinaryOperator):
         """
         super().__init__(left, right)
         self.symbol = "^"
-        self.precedence = 3
-        self.group_right = True
-        if not isinstance(left, Index):
-            self.group_left = True
-        if isinstance(self.left, DimensionedLiteral):
-            self.left = Bracket(
-                self.left, scale=True
-            )  # Should this be in the string conversion rather than here? Would mean changes to _BinaryOperator or a separate __str__ for Power.
+
+    def _should_group_operand(self, operand: Token, is_right: bool = False) -> bool:
+        if is_right:
+            return True
+        if isinstance(operand, DimensionedLiteral):
+            return True
+        return super()._should_group_operand(operand, is_right=False)
 
     def _operation(self, left: CallableToken, right: CallableToken) -> Any:
         return left.value**right.value
 
+    def __str__(self) -> str:
+        left = self.format_operand(self.left, is_right=False)
+        right = self.format_operand(self.right, is_right=True)
+        return f"{left}{self.symbol}{right}"
+
 
 class Index(_BinaryOperator):
+    precedence = 40
+    bracket_left = True
+    bracket_right = False
+
     def __init__(
         self,
         left: CallableToken | str | float,
@@ -1330,13 +1402,19 @@ class Index(_BinaryOperator):
         """
         super().__init__(left, right)
         self.symbol = "_"
-        self.precedence = 3
-        self.group_right = True
-        if not isinstance(left, Power):
-            self.group_left = True
+
+    def _should_group_operand(self, operand: Token, is_right: bool = False) -> bool:
+        if is_right:
+            return True
+        return super()._should_group_operand(operand, is_right=False)
 
     def _operation(self, left: CallableToken, right: CallableToken) -> None:
         pass  # This is not a real operation, and only exists for simple formatting
+
+    def __str__(self) -> str:
+        left = self.format_operand(self.left, is_right=False)
+        right = self.format_operand(self.right, is_right=True)
+        return f"{left}{self.symbol}{right}"
 
 
 class Concatenation(Token):
@@ -1561,11 +1639,15 @@ class ArrayIndex(Token):
 
 
 class _BooleanBinaryOperator(_BinaryOperator):
+    precedence = 0
+    is_associative = True
+    bracket_left = True
+    bracket_right = True
+
     def __init__(
         self, left: CallableToken | str | float, right: CallableToken | str | float
     ) -> "_BooleanBinaryOperator":
         super().__init__(left, right)
-        self.precedence = 1
 
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
         value = self._operation(self.left, self.right)

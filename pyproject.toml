@@ -20,7 +20,8 @@ classifiers = [
 dependencies = [
     "panflute",
     "pyyaml",
-    "pint"
+    "pint",
+    "numpy",
 ]
 
 [project.urls]

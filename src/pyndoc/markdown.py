@@ -5,6 +5,8 @@ from typing import Any, List, Optional
 import panflute as pf
 import logging
 
+logger = logging.getLogger("pyndoc.markdown")
+
 TARGET_FORMAT = None
 
 
@@ -301,13 +303,13 @@ def header(
     identifier: Optional[str] = None,
     classes: Optional[list[str] | str] = None,
 ):
-    logging.debug(f"Text: {text}\n\tType: {type(text)}")
+    logger.debug(f"Text: {text}\n\tType: {type(text)}")
     if isinstance(text, str):
         text = string(text)
-    logging.debug(f"Text: {text}\n\tType: {type(text)}")
+    logger.debug(f"Text: {text}\n\tType: {type(text)}")
     if not isinstance(text, (tuple, list)):
         text = [text]
-    logging.debug(f"Text: {text}\n\tType: {type(text)}")
+    logger.debug(f"Text: {text}\n\tType: {type(text)}")
     if classes is not None:
         if isinstance(classes, str):
             classes = classes.split()
@@ -598,7 +600,7 @@ def convert_from_string(
         output_format = format,
     )
     # output = pf.convert_text(text, input_format="markdown", standalone = False)
-    logging.debug(f"Output from markdown conversion: {output}")
+    logger.debug(f"Output from markdown conversion: {output}")
     return output
 
 

@@ -3860,11 +3860,17 @@ __value_pattern = re.compile(
 )
 
 
+DEFAULT_NAMESPACE: Optional[Dict[str, Any]] = None
+
+
 def define_symbols(
     statements: str,
     namespace: Optional[Dict[str, Any]] = None,
     # write_to_namespace: bool = False
 ) -> None | Tuple[Token]:
+    if namespace is None:
+        namespace = DEFAULT_NAMESPACE
+
     # Each line consists of `var = value units (fmt);`, `value`, `units`, `fmt` optional.
     # If all three are omitted, the line can be `var;`
     # They don't have to be separated by newlines.

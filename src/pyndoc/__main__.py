@@ -1,123 +1,60 @@
-import sys
-from pathlib import Path
-import time
-from .preprocess import preprocess
-import subprocess
-import json
-import yaml
-from .server_utils import get_or_start_server, stop_server
+from __future__ import annotations
 
+import argparse
 import logging
+from pathlib import Path
+import subprocess
+import sys
+from typing import Sequence
 
-def start_logging(logging_level: str | None = None):
-    """Start logging to a file."""
-    if logging_level is not None:
-        logging_level = logging.getLevelName(logging_level.upper())
+import yaml
+
+from .preprocess import preprocess
+from .timer import Timer
+
+logger = logging.getLogger("pyndoc")
+
+
+def start_logging(logging_level: str | None = None) -> None:
+    level = (logging_level or "DEBUG").upper()
+
+    valid_levels = logging.getLevelNamesMapping()
+    if level not in valid_levels:
+        valid_keys = ", ".join(k for k in valid_levels if not k.startswith("NOTSET"))
+        raise ValueError(f"Invalid log level: {logging_level!r}. Expected one of: {valid_keys}")
+
     logging.basicConfig(
         filename="pyndoc.log",
-        level=logging.DEBUG if logging_level is None else logging_level,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        filemode="w+",
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        filemode="w",
+        encoding="utf-8",
+        force=True,
     )
+    logger.debug("Created log file from __main__.py")
 
-    logging.debug("Created log file from __main__.py")
 
-
-def check_filter_executable(filter_file: Path):
-    # if we're on linux, check if the filter has execute permissions
+def check_filter_executable(filter_file: Path) -> None:
+    # Checks if the filter file has executable permissions on linux
     if sys.platform == "linux":
         if not filter_file.is_file():
-            raise FileNotFoundError("Filter file not found.")
+            raise FileNotFoundError(f"Filter file not found: {filter_file}")
         if not filter_file.stat().st_mode & 0o111:
             filter_file.chmod(0o755)
 
 
-def get_arg(
-    args: list[str], arg: str | list[str], remove: bool = False, is_flag=False
-) -> str | bool | None:
-    """Get an argument from a list of command line arguments.
+def parse_cli_args(argv: Sequence[str]) -> tuple[argparse.Namespace, list[str]]:
+    # Parse the pyndoc arguments without touching the normal Pandoc arguments
+    parser = argparse.ArgumentParser(
+        prog="pyndoc",
+        description="Pandoc preprocessor and filter for Python execution at build time.",
+        add_help=False,
+    )
+    parser.add_argument("--preprocess", action="store_true", help="Preprocess the input file before Pandoc.")
+    parser.add_argument("--preprocess-only", action="store_true", help="Run preprocessing only and print output.")
+    parser.add_argument("--log-level", default=None, help="Set logging verbosity level.")
 
-    Parameters
-    ----------
-    args : list[str]
-        The list of command line arguments, split on spaces.
-    arg : str | list[str]
-        The argument to search for. If a list, this should be a list of 
-        aliases for the argument. The first one found will be returned.
-    remove : bool, optional
-        Whether to remove the argument from the list, by default False
-    is_flag : bool, optional
-        Whether the argument is a flag (no value), by default False
-
-    Returns
-    -------
-    str | bool | None
-        The value of the argument, or True if it is a flag, or None if not found.
-    """    
-    if isinstance(arg, str):
-        arg = [arg]
-    if is_flag:
-        for a in arg:
-            if a in args:
-                if remove:
-                    idx = args.index(a)
-                    args.pop(idx)
-                return True
-        return False
-    for a in arg:
-        if a in args:
-            idx = args.index(a)
-            value = args[idx + 1]
-            if remove:
-                args.pop(idx)
-                args.pop(idx)
-            return value
-    for a in arg:
-        for i, sys_a in enumerate(args):
-            if "=" not in sys_a:
-                continue
-            sys_a = sys_a.split("=")
-            if sys_a[0] == a:
-                if remove:
-                    args.pop(i)
-                return sys_a[1]
-    return None
-
-
-def replace_arg(args: list[str], arg: str | list[str], value: str):
-    """Replace an argument in a list of command line arguments.
-
-    Parameters
-    ----------
-    args : list[str]
-        The list of command line arguments, split on spaces.
-    arg : str | list[str]
-        The argument to search for. If a list, this should be a list of 
-        aliases for the argument. The first one found will be replaced.
-    value : str
-        The value to replace the argument with.
-
-    Raises
-    ------
-    ValueError
-        If the argument is not found in the list of arguments.
-    """    
-    if isinstance(arg, str):
-        arg = [arg]
-    for a in arg:
-        if a in args:
-            idx = args.index(a)
-            args[idx + 1] = value
-            return
-    for a in arg:
-        for i, sys_a in enumerate(args):
-            if "=" not in sys_a:
-                continue
-            sys_a = sys_a.split("=")
-            if sys_a[0] == a:
-                args[i] = f"{a}={value}"
-                return
-    raise ValueError(f"Argument {arg} not found in args.")
+    return parser.parse_known_args(argv)
 
 
 file_ext_map = {
@@ -140,58 +77,74 @@ file_ext_map = {
 }
 
 
-def get_format(args) -> str:
-    """Get the output format from the command line arguments. Checks for
-        - `--to` or `-t`
-        - `--write` or `-w`
-        - `--output` or `-o` specifying a file extension
-        - `--defaults` specifying a file with default options
+def get_format(pandoc_args: list[str]) -> str:
+    # Check cli arguments to find or deduce the target format.
+    # Checks for explicit output formats or writers, then the output file's 
+    # extension, then a `defaults` file and finally the pdf engine
+    format_parser = argparse.ArgumentParser(add_help=False)
+    format_parser.add_argument("--to", "-t", "--write", "-w", dest="to_format", default=None)
+    format_parser.add_argument("--output", "-o", dest="output_file", default=None)
+    format_parser.add_argument("--defaults", dest="defaults_file", default=None)
+    format_parser.add_argument("--pdf-engine", dest="pdf_engine", default=None)
 
-    Parameters
-    ----------
-    args : _type_
-        The list of command line arguments.
+    opts, _ = format_parser.parse_known_args(pandoc_args)
+    to_format = opts.to_format
 
-    Returns
-    -------
-    str
-        The output format to convert to.
-
-    Raises
-    ------
-    ValueError
-        If no output format is specified.
-    ValueError
-        If an unknown output format or file extension is specified.
-    """    
-    to_format = get_arg(args, ("--to", "-t", "--write", "-w"))
     if to_format is None:
-        out_file = get_arg(args, ("--output", "-o"))
-        if out_file is None:
-            # No format given, try checking for a defaults file
-            defaults_file = get_arg(args, ("--defaults",))
-            if defaults_file is not None:
-                with Path(defaults_file).open("r") as f:
-                    defaults = yaml.safe_load(f)
-                # Could be `to`, `writer`, or `output-file`
-                options = ["to", "writer", "output-file"]
-                for option in options:
-                    if option in defaults:
-                        to_format = defaults[option]
-                        break
+        if opts.output_file is None:
+            # Check for defaults file
+            if opts.defaults_file is not None:
+                defaults_path = Path(opts.defaults_file)
+                if defaults_path.is_file():
+                    with defaults_path.open("r", encoding="utf-8") as f:
+                        defaults = yaml.safe_load(f) or {}
+                    for key in ("to", "writer", "output-file"):
+                        if key in defaults:
+                            val = defaults[key]
+                            if key == "output-file":
+                                ext = Path(val).suffix.lstrip(".")
+                                to_format = file_ext_map.get(ext)
+                            else:
+                                to_format = val
+                            break
             if to_format is None:
                 raise ValueError("No output format or output file specified.")
         else:
-            file_ext = Path(out_file).suffix
-            to_format = file_ext_map.get(file_ext[1:], None)
+            ext = Path(opts.output_file).suffix.lstrip(".")
+            to_format = file_ext_map.get(ext)
             if to_format is None:
                 raise ValueError(
-                    f"Unknown output format: {file_ext}. Please specify the format with `--to`."
+                    f"Unknown output format for extension '{ext}'. Please specify format with `--to`."
                 )
+
     if to_format == "pdf":
-        pdf_engine = get_arg(args, "--pdf-engine")
-        to_format = "latex" if pdf_engine is None else pdf_engine
+        to_format = opts.pdf_engine if opts.pdf_engine else "latex"
+
     return to_format
+
+
+def find_input_file_index(args: list[str]) -> int:
+    # Input file is positional but can occur anywhere. Searches backwards to
+    # find the last argument which doesn't have a named flag.
+    val_taking_flags = {
+        "-o", "--output", "-t", "--to", "-w", "--write",
+        "-f", "--from", "-r", "--read",
+        "--defaults", "--pdf-engine", "-F", "--filter",
+        "-V", "--variable", "-M", "--metadata",
+        "-C", "--citeproc", "--csl", "--bibliography",
+        "--template", "--css", "--highlight-style",
+    }
+    i = len(args) - 1
+    while i >= 0:
+        arg = args[i]
+        if not arg.startswith("-"):
+            # Check if this was a value for the preceding flag
+            if i > 0 and args[i - 1] in val_taking_flags:
+                i -= 2
+                continue
+            return i
+        i -= 1
+    return len(args) - 1
 
 
 logging_files = ["pyndoc.log", "pyndoc.filters.log", "pyndoc.server.log"]
@@ -230,89 +183,64 @@ return_codes = {
 }
 
 
-def main():
-    """Main function for the command line interface. Parses the command line
-    arguments, preprocesses the input file if necessary, starts the server,
-    runs pandoc, stops the server, and deletes the metadata file.
-    """    
-    args = sys.argv[1:]
-    to_preprocess = get_arg(args, ("--preprocess"), is_flag=True, remove=True)
-    only_preprocess = get_arg(args, ("--preprocess-only"), is_flag=True, remove=True)
+def main() -> None:
+    pyndoc_opts, pandoc_args = parse_cli_args(sys.argv[1:])
 
-    # remove the log files if they exist
+    # Clean previous log files
     for log_file in logging_files:
         try:
             Path(log_file).unlink()
         except FileNotFoundError:
             pass
 
-    logging_level = get_arg(args, ("--log-level"), remove=True)
-    start_logging(logging_level)
+    start_logging(pyndoc_opts.log_level)
 
-    target_format = get_format(args)
+    target_format = get_format(pandoc_args)
 
-    if to_preprocess:
-        logging.info("Preprocessing file.")
-        start_time = time.perf_counter_ns()
-        target_file = Path(args[-1])
-        with target_file.open("r") as f:
-            contents = f.read()
-        contents = preprocess(contents, target_format=target_format)
-        temp_file = target_file.parent / (
-            target_file.stem + "_tmp" + target_file.suffix
-        )
-        with temp_file.open("w") as f:
-            f.write(contents)
-        end_time = time.perf_counter_ns()
-        logging.info(f"Preprocessing took {(end_time - start_time) / 1e6:.0f} ms.")
-        args[-1] = str(temp_file)
-        if only_preprocess:
-            # print(contents)
-            return
+    temp_file: Path | None = None
+    if pyndoc_opts.preprocess or pyndoc_opts.preprocess_only:
+        with Timer("Preprocessing", logger=logger, log_level=logging.INFO):
+            input_idx = find_input_file_index(pandoc_args)
+            target_file = Path(pandoc_args[input_idx])
 
-    check_filter_executable(Path(__file__).parent / "filter.py")
+            with target_file.open("r", encoding="utf-8") as f:
+                contents = f.read()
 
-    # add the filter to the filters list
+            contents = preprocess(contents, target_format=target_format)
+
+            if pyndoc_opts.preprocess_only:
+                print(contents)
+                return
+
+            temp_file = target_file.parent / f"{target_file.stem}_tmp{target_file.suffix}"
+            with temp_file.open("w", encoding="utf-8") as f:
+                f.write(contents)
+
+            pandoc_args[input_idx] = str(temp_file)
+
     filter_file = Path(__file__).parent / "filter.py"
-    # current_filters = get_arg(args, ("--filter", "-F"))
-    # if current_filters is not None:
-    #     current_filters = current_filters.split(",")
-    #     current_filters.append(str(filter_file))
-    #     replace_arg(args, ("--filter", "-F"), ",".join(current_filters))
-    # else:
-    #     args.append(f"--filter={filter_file}")
-    # This is not how pandoc filters work. It does not take a list of filters, instead the filter can be passed multiple times. This filter should be first, however.
-    args.insert(0, f"--filter={filter_file}")
+    check_filter_executable(filter_file)
 
-    start_time = time.perf_counter_ns()
-    logging.debug("Getting or starting server.")
-    port = get_or_start_server()
-    logging.debug(f"Server started on port {port}.")
-    end_time = time.perf_counter_ns()
-    logging.info(f"Server startup took {(end_time - start_time) / 1e6:.0f} ms.")
-    metadata_file = Path(".pyndoc.json")
-    metadata = {"format": target_format, "port": port}
-    with metadata_file.open("w") as f:
-        json.dump(metadata, f, indent=4)
+    # Insert Pyndoc's filter at the beginning of the arguments list
+    # This guarantees it runs before any other user-specified Pandoc filters
+    pandoc_args.insert(0, f"--filter={filter_file}")
 
-    # run pandoc
-    start_time = time.perf_counter_ns()
-    result = subprocess.run(["pandoc", *args], capture_output=True)
-    if result.returncode != 0:
-        print(result.stderr.decode())
-        raise Exception(f"Pandoc failed with return code {result.returncode}: {return_codes.get(result.returncode, 'Unknown error')}")
-    else:
-        print(result.stdout.decode())
-    end_time = time.perf_counter_ns()
-    logging.info(f"Pandoc took {(end_time - start_time) / 1e6:.0f} ms and returned {result.returncode}.")
-    if to_preprocess:
-        temp_file.unlink()
-    stop_server(port)
     try:
-        metadata_file.unlink()
-    except FileNotFoundError:
-        logging.warning("Metadata file not found to delete.")
-    
+        with Timer("Pandoc execution", logger=logger, log_level=logging.INFO):
+            result = subprocess.run(["pandoc", *pandoc_args], capture_output=True)
+
+        if result.returncode != 0:
+            err_msg = result.stderr.decode("utf-8", errors="replace")
+            print(err_msg, file=sys.stderr)
+            raise RuntimeError(
+                f"Pandoc failed with return code {result.returncode}: {return_codes.get(result.returncode, 'Unknown error')}"
+            )
+        else:
+            print(result.stdout.decode("utf-8", errors="replace"))
+    finally:
+        # Guarantee cleanup even on failure or keyboard interrupt
+        if temp_file is not None and temp_file.exists():
+            temp_file.unlink()
 
 
 if __name__ == "__main__":

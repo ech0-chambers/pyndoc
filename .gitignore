@@ -166,3 +166,5 @@ cython_debug/
 
 testing/
 src/pyndoc/_latex.py
+src/pyndoc/preprocess.py.bak
+tests/

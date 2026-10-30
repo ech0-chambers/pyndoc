@@ -1,6 +1,6 @@
-from enum import Enum, auto
+from enum import StrEnum, auto
 
-class Format(Enum):
+class Format(StrEnum):
     ASCIIDOC = auto()
     ASCIIDOC_LEGACY = auto()
     ASCIIDOCTOR = auto()

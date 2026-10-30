@@ -43,6 +43,7 @@ class LatexConfig:
     use_arc_for_inverse_trig: bool = False
     array_index_separate: bool = False
     array_index_bracket_type: str = "square"
+    use_degrees: bool = False
 
 
 ACTIVE_CONFIG = LatexConfig()
@@ -569,10 +570,14 @@ class Macro(Token):
         out = "\\" + self.name
 
         for arg in self.arguments:
-            if isinstance(arg, tuple):
-                out += Argument(arg[1], arg[0], self.in_expl3).__str__()
+            if isinstance(arg, Argument):
+                out += str(arg)
+            elif isinstance(arg, tuple):
+                out += str(
+                    Argument(arg[0], is_optional=arg[1], in_expl3=self.in_expl3)
+                )
             else:
-                out += Argument(arg, self.in_expl3).__str__()
+                out += str(Argument(arg, in_expl3=self.in_expl3))
 
         return out
 
@@ -604,14 +609,13 @@ class Environment(Token):
         self.in_expl3 = in_expl3
 
     def __str__(self) -> str:
-        out = Macro(
-            "begin", self.name, *self.arguments, in_expl3=self.in_expl3
-        ).__str__()
-        if isinstance(self.content, (list, tuple)):
-            out += "".join([str(expr) for expr in self.content])
-        else:
-            out += str(self.content)
-        out += Macro("end", self.name).__str__()
+        out = str(Macro("begin", self.name, *self.arguments, in_expl3=self.in_expl3))
+        if self.content is not None:
+            if isinstance(self.content, (list, tuple)):
+                out += "".join([str(expr) for expr in self.content])
+            else:
+                out += str(self.content)
+        out += str(Macro("end", self.name))
         return out
 
 
@@ -1631,20 +1635,26 @@ class AbsoluteValue(Bracket):
         super().__init__(*children, scale=scale)
         self.left_bracket = "|"
         self.right_bracket = "|"
-        if self.value < 0:
-            self._value = (
-                -self.value
-            )  # seems like the safest way to do this when value could be anything
-        else:
-            self._value = self.value
 
-    # This one can actually be called!
+    @property
+    def value(self) -> Any:
+        child_val = super().value
+        if child_val is None:
+            return None
+        try:
+            return abs(child_val)
+        except TypeError:
+            return None
+
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
-        value = self._value
-
-        if isinstance(value, pint.Quantity):
-            return Quantity(value.magnitude, unit=value.units)(*args, **kwargs)
-        return Quantity(value)(*args, **kwargs)
+        val = self.value
+        if val is None:
+            raise ValueError(
+                "Cannot evaluate AbsoluteValue of expression without a numeric value"
+            )
+        if isinstance(val, pint.Quantity):
+            return Quantity(val.magnitude, unit=val.units)(*args, **kwargs)
+        return Quantity(val)(*args, **kwargs)
 
 
 class MixedBracket(Bracket):
@@ -2251,6 +2261,38 @@ class _TrigFunction(CallableToken, ABC):
         self.power = None if power is None else as_token(power)
         self.inverse = inverse
 
+    @property
+    def value(self) -> Any:
+        return self._operation(self.expr, self.power)
+
+    def _eval_angle_arg(self, expr: Token) -> Any:
+        raw_val = expr.value
+        if isinstance(raw_val, pint.Quantity):
+            unit_dict = dict(raw_val.units._units)
+            angle_units = {"degree", "arcdeg", "arcminute", "arcsecond"}
+            if any(u in angle_units for u in unit_dict):
+                target_parts = []
+                for u_name, power in unit_dict.items():
+                    if u_name in angle_units:
+                        target_parts.append(f"radian**{power}")
+                    else:
+                        target_parts.append(f"{u_name}**{power}")
+                target_unit = " * ".join(target_parts)
+                return raw_val.to(target_unit).magnitude
+            elif "radian" in unit_dict:
+                return raw_val.magnitude
+            else:
+                mag = raw_val.magnitude
+                return np.deg2rad(mag) if ACTIVE_CONFIG.use_degrees else mag
+        if ACTIVE_CONFIG.use_degrees:
+            return np.deg2rad(raw_val)
+        return raw_val
+
+    def _eval_inverse_result(self, rad_val: Any) -> Any:
+        if ACTIVE_CONFIG.use_degrees:
+            return np.rad2deg(rad_val)
+        return rad_val
+
     def __str__(self) -> str:
         if self.inverse:
             if ACTIVE_CONFIG.use_arc_for_inverse_trig:
@@ -2289,7 +2331,7 @@ class _TrigFunction(CallableToken, ABC):
         )
 
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
-        value = self._operation(self.expr, self.power)
+        value = self.value
         if isinstance(value, pint.Quantity):
             return Quantity(value.magnitude, unit=value.units)(*args, **kwargs)
         return Quantity(value)(*args, **kwargs)
@@ -2315,7 +2357,8 @@ class Sine(_TrigFunction):
         super().__init__("sin", expr, power)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return np.sin(expr.value) ** (1 if power is None else power.value)
+        val = np.sin(self._eval_angle_arg(expr))
+        return val ** (1 if power is None else power.value)
 
 
 class Cosine(_TrigFunction):
@@ -2334,7 +2377,8 @@ class Cosine(_TrigFunction):
         super().__init__("cos", expr, power)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return np.cos(expr.value) ** (1 if power is None else power.value)
+        val = np.cos(self._eval_angle_arg(expr))
+        return val ** (1 if power is None else power.value)
 
 
 class Tangent(_TrigFunction):
@@ -2353,7 +2397,8 @@ class Tangent(_TrigFunction):
         super().__init__("tan", expr, power)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return np.tan(expr.value) ** (1 if power is None else power.value)
+        val = np.tan(self._eval_angle_arg(expr))
+        return val ** (1 if power is None else power.value)
 
 
 class ArcSine(_TrigFunction):
@@ -2372,7 +2417,8 @@ class ArcSine(_TrigFunction):
         super().__init__("sin", expr, power, inverse=True)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return np.asin(expr.value) ** (1 if power is None else power.value)
+        val = self._eval_inverse_result(np.asin(expr.value))
+        return val ** (1 if power is None else power.value)
 
 
 class ArcCosine(_TrigFunction):
@@ -2391,7 +2437,8 @@ class ArcCosine(_TrigFunction):
         super().__init__("cos", expr, power, inverse=True)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return np.acos(expr.value) ** (1 if power is None else power.value)
+        val = self._eval_inverse_result(np.acos(expr.value))
+        return val ** (1 if power is None else power.value)
 
 
 class ArcTangent(_TrigFunction):
@@ -2410,7 +2457,8 @@ class ArcTangent(_TrigFunction):
         super().__init__("tan", expr, power, inverse=True)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return np.atan(expr.value) ** (1 if power is None else power.value)
+        val = self._eval_inverse_result(np.atan(expr.value))
+        return val ** (1 if power is None else power.value)
 
 
 class Cosecant(_TrigFunction):
@@ -2429,7 +2477,8 @@ class Cosecant(_TrigFunction):
         super().__init__("csc", expr, power)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return 1 / np.sin(expr.value) ** (1 if power is None else power.value)
+        val = 1 / np.sin(self._eval_angle_arg(expr))
+        return val ** (1 if power is None else power.value)
 
 
 class Secant(_TrigFunction):
@@ -2448,7 +2497,8 @@ class Secant(_TrigFunction):
         super().__init__("sec", expr, power)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return 1 / np.cos(expr.value) ** (1 if power is None else power.value)
+        val = 1 / np.cos(self._eval_angle_arg(expr))
+        return val ** (1 if power is None else power.value)
 
 
 class Cotangent(_TrigFunction):
@@ -2467,7 +2517,8 @@ class Cotangent(_TrigFunction):
         super().__init__("cot", expr, power)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return 1 / np.tan(expr.value) ** (1 if power is None else power.value)
+        val = 1 / np.tan(self._eval_angle_arg(expr))
+        return val ** (1 if power is None else power.value)
 
 
 class ArcCosecant(_TrigFunction):
@@ -2486,7 +2537,8 @@ class ArcCosecant(_TrigFunction):
         super().__init__("csc", expr, power, inverse=True)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return np.asin(1 / expr.value) ** (1 if power is None else power.value)
+        val = self._eval_inverse_result(np.asin(1 / expr.value))
+        return val ** (1 if power is None else power.value)
 
 
 class ArcSecant(_TrigFunction):
@@ -2505,7 +2557,8 @@ class ArcSecant(_TrigFunction):
         super().__init__("sec", expr, power, inverse=True)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return np.acos(1 / expr.value) ** (1 if power is None else power.value)
+        val = self._eval_inverse_result(np.acos(1 / expr.value))
+        return val ** (1 if power is None else power.value)
 
 
 class ArcCotangent(_TrigFunction):
@@ -2524,7 +2577,8 @@ class ArcCotangent(_TrigFunction):
         super().__init__("cot", expr, power, inverse=True)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return np.atan(1 / expr.value) ** (1 if power is None else power.value)
+        val = self._eval_inverse_result(np.atan(1 / expr.value))
+        return val ** (1 if power is None else power.value)
 
 
 class HyperbolicSine(_TrigFunction):
@@ -2543,7 +2597,8 @@ class HyperbolicSine(_TrigFunction):
         super().__init__("sinh", expr, power)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return np.sinh(expr.value) ** (1 if power is None else power.value)
+        val = np.sinh(self._eval_angle_arg(expr))
+        return val ** (1 if power is None else power.value)
 
 
 class HyperbolicCosine(_TrigFunction):
@@ -2562,7 +2617,8 @@ class HyperbolicCosine(_TrigFunction):
         super().__init__("cosh", expr, power)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return np.cosh(expr.value) ** (1 if power is None else power.value)
+        val = np.cosh(self._eval_angle_arg(expr))
+        return val ** (1 if power is None else power.value)
 
 
 class HyperbolicTangent(_TrigFunction):
@@ -2581,7 +2637,8 @@ class HyperbolicTangent(_TrigFunction):
         super().__init__("tanh", expr, power)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return np.tanh(expr.value) ** (1 if power is None else power.value)
+        val = np.tanh(self._eval_angle_arg(expr))
+        return val ** (1 if power is None else power.value)
 
 
 class HyperbolicCosecant(_TrigFunction):
@@ -2600,7 +2657,8 @@ class HyperbolicCosecant(_TrigFunction):
         super().__init__("csch", expr, power)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return 1 / np.sinh(expr.value) ** (1 if power is None else power.value)
+        val = 1 / np.sinh(self._eval_angle_arg(expr))
+        return val ** (1 if power is None else power.value)
 
 
 class HyperbolicSecant(_TrigFunction):
@@ -2619,7 +2677,8 @@ class HyperbolicSecant(_TrigFunction):
         super().__init__("sech", expr, power)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return 1 / np.cosh(expr.value) ** (1 if power is None else power.value)
+        val = 1 / np.cosh(self._eval_angle_arg(expr))
+        return val ** (1 if power is None else power.value)
 
 
 class HyperbolicCotangent(_TrigFunction):
@@ -2638,7 +2697,8 @@ class HyperbolicCotangent(_TrigFunction):
         super().__init__("coth", expr, power)
 
     def _operation(self, expr: Token, power: Token) -> Any:
-        return 1 / np.tanh(expr.value) ** (1 if power is None else power.value)
+        val = 1 / np.tanh(self._eval_angle_arg(expr))
+        return val ** (1 if power is None else power.value)
 
 
 class HyperbolicArcSine(_TrigFunction):

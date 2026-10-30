@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Set, Tuple, Dict, Any
+from typing import List, Optional, Set, Tuple, Dict, Any, Generator
+from dataclasses import dataclass
+import contextlib
 import pint
 import numpy as np
 import re
@@ -28,14 +30,51 @@ __default_preferred_units = [
 
 ureg.default_preferred_units = __default_preferred_units
 
-DEFAULT_FORMAT = ".4g"
-MULTIPLICATION_OPERATOR = "\\times"
-AUTO_TRUNCATE_LENGTH = 6
-USE_SIUNITX = False
-USE_EXP_FOR_EXPONENTIAL = False
-USE_ARC_FOR_INVERSE_TRIG = False
-ARRAY_INDEX_SEPARATE = False
-ARRAY_INDEX_BRACKET_TYPE = "square"
+
+@dataclass
+class LatexConfig:
+    """Configuration options for LaTeX rendering and formatting."""
+
+    default_format: str = ".4g"
+    multiplication_operator: str = "\\times"
+    auto_truncate_length: int = 6
+    use_siunitx: bool = False
+    use_exp_for_exponential: bool = False
+    use_arc_for_inverse_trig: bool = False
+    array_index_separate: bool = False
+    array_index_bracket_type: str = "square"
+
+
+ACTIVE_CONFIG = LatexConfig()
+
+
+@contextlib.contextmanager
+def latex_config(**overrides: Any) -> Generator[LatexConfig, None, None]:
+    """Context manager for temporary LaTeX formatting overrides.
+
+    Parameters
+    ----------
+    **overrides : Any
+        Key-value pairs corresponding to attributes of LatexConfig.
+
+    Yields
+    ------
+    LatexConfig
+        The active configuration object with overrides applied.
+    """
+    global ACTIVE_CONFIG
+    for k in overrides:
+        if not hasattr(ACTIVE_CONFIG, k):
+            raise AttributeError(f"Invalid LatexConfig option: '{k}'")
+
+    old_values = {k: getattr(ACTIVE_CONFIG, k) for k in overrides}
+    for k, v in overrides.items():
+        setattr(ACTIVE_CONFIG, k, v)
+    try:
+        yield ACTIVE_CONFIG
+    finally:
+        for k, v in old_values.items():
+            setattr(ACTIVE_CONFIG, k, v)
 
 
 @pint.register_unit_format("U")
@@ -426,7 +465,7 @@ __unit_prefixes = [
 
 
 def parse_unit(unit: pint.Unit | str) -> pint.Unit:
-    """Parses a unit string into a pint.Unit object. The unit string may be in siunitx syntax (`\meter\per\second\squared`), written fully (meter per second squared), or abbreviated (`m/s^2` or `m s^-2`).)
+    r"""Parses a unit string into a pint.Unit object. The unit string may be in siunitx syntax (`\meter\per\second\squared`), written fully (meter per second squared), or abbreviated (`m/s^2` or `m s^-2`).)
 
     Parameters
     ----------
@@ -511,7 +550,7 @@ class Macro(Token):
         *arguments: str | Tuple[str, bool] | Argument,
         in_expl3: bool = False,
     ):
-        """A LaTeX macro, optionally with arguments.
+        r"""A LaTeX macro, optionally with arguments.
 
         Parameters
         ----------
@@ -583,7 +622,7 @@ class Quantity(CallableToken):
         fmt: Optional[str] = None,
         unit: Optional[pint.Unit | str] = None,
     ) -> "Quantity":
-        """A quantity with a value and unit.
+        r"""A quantity with a value and unit.
 
         Parameters
         ----------
@@ -677,7 +716,7 @@ class Quantity(CallableToken):
     def __call__(
         self, fmt: Optional[str] = None, unit: Optional[pint.Unit | str] = None
     ) -> Literal:
-        """Returns a Token representing the quantity, formatted as specified.
+        r"""Returns a Token representing the quantity, formatted as specified.
 
         Parameters
         ----------
@@ -721,7 +760,7 @@ def format_value(
     fmt: Optional[str] = None,
     unit: Optional[pint.Unit | str] = None,
 ) -> Tuple[str, bool]:
-    """Formats a value with an optional unit.
+    r"""Formats a value with an optional unit.
 
     Parameters
     ----------
@@ -769,7 +808,7 @@ def format_value(
             except Exception:
                 raise ValueError(f"Invalid unit: {unit}")
     if fmt is None:
-        fmt = DEFAULT_FORMAT
+        fmt = ACTIVE_CONFIG.default_format
     if fmt is not None:
         # TODO: fractional format
         print_value = f"{value:{fmt}}"
@@ -792,13 +831,13 @@ def format_value(
             return f"{print_value} \\times 10^{{{exponent}}}", False
         return (
             f"{print_value} \\times 10^{{{exponent}}}"
-            + (f"\\ {format_unit(unit, si = USE_SIUNITX)}" if unit else ""),
+            + (f"\\ {format_unit(unit, si = ACTIVE_CONFIG.use_siunitx)}" if unit else ""),
             True,
         )
     if unit is None or unit.dimensionless and unit != ureg.percent:
         return print_value, False
     return (
-        print_value + (f"\\ {format_unit(unit, si = USE_SIUNITX)}" if unit else ""),
+        print_value + (f"\\ {format_unit(unit, si = ACTIVE_CONFIG.use_siunitx)}" if unit else ""),
         True,
     )
 
@@ -811,7 +850,7 @@ def si(
     in_unit: Optional[pint.Unit | str] = None,
     # exp_only: bool = False,
 ) -> str:
-    """Formats a value with SI units.
+    r"""Formats a value with SI units.
 
     Parameters
     ----------
@@ -869,12 +908,15 @@ def si(
 def __truncate_zeros(value: str) -> str:
     if "." in value:
         integer, decimal = value.split(".")
-        if len(decimal) > AUTO_TRUNCATE_LENGTH:
-            decimal = int(decimal[: AUTO_TRUNCATE_LENGTH + 1])
+        if (
+            ACTIVE_CONFIG.auto_truncate_length >= 0
+            and len(decimal) > ACTIVE_CONFIG.auto_truncate_length
+        ):
+            decimal = int(decimal[: ACTIVE_CONFIG.auto_truncate_length + 1])
             # round to nearest 10
             decimal = round(decimal, -1)
             # check if we've rolled over to a new integer
-            if len(str(decimal)) > AUTO_TRUNCATE_LENGTH:
+            if len(str(decimal)) > ACTIVE_CONFIG.auto_truncate_length:
                 integer = str(int(integer) + 1)
                 decimal = ""  # decimal will always be 0 at this point
         # remove trailing zeros
@@ -886,7 +928,7 @@ def __truncate_zeros(value: str) -> str:
 
 
 def format_unit(unit: pint.Unit, si: bool = False) -> str:
-    """Formats a pint.Unit object.
+    r"""Formats a pint.Unit object.
 
     Parameters
     ----------
@@ -906,7 +948,7 @@ def format_unit(unit: pint.Unit, si: bool = False) -> str:
 
 
 def unit(unit: str | pint.Unit, in_math_mode: bool = False) -> str:
-    """Formats a unit.
+    r"""Formats a unit.
 
     Parameters
     ----------
@@ -949,7 +991,7 @@ class Variable(CallableToken):
         fmt: Optional[str] = None,
         unit: Optional[pint.Unit | str] = None,
     ) -> "Variable":
-        """A variable with a name, value, and optional unit and format specifier.
+        r"""A variable with a name, value, and optional unit and format specifier.
 
         Parameters
         ----------
@@ -1314,7 +1356,7 @@ class Times(_BinaryOperator):
     def __init__(
         self, left: CallableToken | str | float, right: CallableToken | str | float
     ) -> "Times":
-        """Multiplies two values together, such as `a * b`. This is rendered as `a \\times b` (or `a \\cdot b` etc. depending on the value of `MULTIPLICATION_OPERATOR`).
+        r"""Multiplies two values together, such as `a * b`. This is rendered as `a \times b` (or `a \cdot b` etc. depending on the value of `multiplication_operator`).
 
         Parameters
         ----------
@@ -1324,7 +1366,17 @@ class Times(_BinaryOperator):
             The right operand.
         """
         super().__init__(left, right)
-        self.symbol = MULTIPLICATION_OPERATOR
+        self._custom_symbol: Optional[str] = None
+
+    @property
+    def symbol(self) -> str:
+        if self._custom_symbol is not None:
+            return self._custom_symbol
+        return ACTIVE_CONFIG.multiplication_operator
+
+    @symbol.setter
+    def symbol(self, value: Optional[str]) -> None:
+        self._custom_symbol = value
 
     def _operation(self, left: CallableToken, right: CallableToken) -> Any:
         return left.value * right.value
@@ -1638,14 +1690,28 @@ class ArrayIndex(Token):
     ):
         self.array = texttt(array) if isinstance(array, str) else as_token(array)
         self.index = [texttt(i) if isinstance(i, str) else as_token(i) for i in index]
-        if separate is None:
-            self.separate = ARRAY_INDEX_SEPARATE
-        else:
-            self.separate = separate
-        if bracket_type is None:
-            self.bracket_type = ARRAY_INDEX_BRACKET_TYPE
-        else:
-            self.bracket_type = bracket_type
+        self._separate = separate
+        self._bracket_type = bracket_type
+
+    @property
+    def separate(self) -> bool:
+        if self._separate is not None:
+            return self._separate
+        return ACTIVE_CONFIG.array_index_separate
+
+    @separate.setter
+    def separate(self, value: Optional[bool]) -> None:
+        self._separate = value
+
+    @property
+    def bracket_type(self) -> str:
+        if self._bracket_type is not None:
+            return self._bracket_type
+        return ACTIVE_CONFIG.array_index_bracket_type
+
+    @bracket_type.setter
+    def bracket_type(self, value: Optional[str]) -> None:
+        self._bracket_type = value
 
     def __str__(self) -> str:
         output = [self.array]
@@ -2187,6 +2253,15 @@ class _TrigFunction(CallableToken, ABC):
 
     def __str__(self) -> str:
         if self.inverse:
+            if ACTIVE_CONFIG.use_arc_for_inverse_trig:
+                fn_name = f"arc{self.name}"
+                if self.power is None:
+                    return str(Collection(Macro(fn_name), Bracket(self.expr, scale=True)))
+                return str(
+                    Collection(
+                        Power(Macro(fn_name), self.power), Bracket(self.expr, scale=True)
+                    )
+                )
             if self.power is None:
                 return str(
                     Collection(
@@ -2744,7 +2819,11 @@ class Exponential(CallableToken):
         self.use_exp = use_exp
 
     def __str__(self) -> str:
-        use_exp = self.use_exp if self.use_exp is not None else USE_EXP_FOR_EXPONENTIAL
+        use_exp = (
+            self.use_exp
+            if self.use_exp is not None
+            else ACTIVE_CONFIG.use_exp_for_exponential
+        )
         if use_exp:
             return str(Collection(Macro("exp"), Bracket(self.expr, scale=True)))
         return str(Power(Macro("mathrm", "e"), self.expr))
@@ -3873,7 +3952,7 @@ def var(
     fmt: Optional[str] = None,
     unit: Optional[pint.Unit | str] = None,
 ) -> Variable:
-    """A variable with a name, value, and optional unit and format specifier.
+    r"""A variable with a name, value, and optional unit and format specifier.
 
     Parameters
     ----------

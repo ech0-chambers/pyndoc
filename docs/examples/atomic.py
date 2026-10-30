@@ -112,7 +112,7 @@ def nuclear_reaction_string(input: str) -> str:
     out = input
     for start, end, replacement in replacements[::-1]:
         out = out[:start] + replacement + out[end:]
-    out = out.replace("->", "\ \\longrightarrow\ ")
+    out = out.replace("->", r"\ \longrightarrow\ ")
     return out
 
 def nuclear_reaction(input: str) -> str:

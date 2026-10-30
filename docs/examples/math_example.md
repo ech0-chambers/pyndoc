@@ -40,7 +40,7 @@ So, the specific heat capacity is %%(C == C()).
         P = {randint(3, 10) * 50} W;
         T_0 = {randint(20, 30)} celsius;
         T_1 = {randint(80, 100)} celsius;    
-    """, globals())
+    """)
     dT = tex.var("\Delta T", T_1 - T_0)
     C = tex.var("C", 4180, unit = 'J/kg/K')
     E = tex.var("E", m * C * dT)

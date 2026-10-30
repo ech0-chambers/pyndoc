@@ -22,6 +22,7 @@ dependencies = [
     "pyyaml",
     "pint",
     "numpy",
+    "rich",
 ]
 
 [project.urls]

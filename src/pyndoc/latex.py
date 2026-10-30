@@ -380,6 +380,22 @@ class CallableToken(Token, ABC):
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
         pass
 
+    def as_quantity(self) -> "Quantity":
+        """Convert the callable token to a Quantity with its current evaluated value."""
+        return Quantity(self.value)
+
+    def __float__(self) -> float:
+        val = self.value
+        if isinstance(val, pint.Quantity):
+            return float(val.magnitude)
+        return float(val)
+
+    def __int__(self) -> int:
+        val = self.value
+        if isinstance(val, pint.Quantity):
+            return int(val.magnitude)
+        return int(val)
+
 
 __unit_prefixes = [
     "quecto",
@@ -588,15 +604,10 @@ class Quantity(CallableToken):
         # this might not be necessary --  we'll see. We might need to track the
         # initial value so that we can always access the magnitude in the
         # original units.
-        i = 0
-        while (
-            isinstance(value, Token) and hasattr(value, "value") and i < 100
-        ):  # this is a bit of a hack
-            value = value.value
-            i += 1
-        if i == 100:
-            raise ValueError(
-                "Encountered seemingly infinitely nested expressions when creating Quantity"
+        if isinstance(value, Token):
+            raise TypeError(
+                f"Quantity expects a numeric scalar or pint.Quantity, not a Token ({type(value).__name__}). "
+                "To create a Quantity from an expression or variable, use expr.as_quantity()."
             )
         self._initial_value = value
         self._initial_unit = unit
@@ -930,11 +941,11 @@ def unit(unit: str | pint.Unit, in_math_mode: bool = False) -> str:
 #     return output
 
 
-class Variable(Quantity):
+class Variable(CallableToken):
     def __init__(
         self,
         name: str,
-        value: float,
+        value: float | int | pint.Quantity | Token,
         fmt: Optional[str] = None,
         unit: Optional[pint.Unit | str] = None,
     ) -> "Variable":
@@ -944,18 +955,52 @@ class Variable(Quantity):
         ----------
         name : str
             The name of the variable. This will be used when rendering the variable directly.
-        value : float
+        value : float | int | pint.Quantity | Token
             The value of the variable. This will be used when the variable is called as a function.
         fmt : Optional[str], optional
             The format specifier to use when rendering the variable. If None, the default format specifier will be used. If `fmt = ''`, no format specifier will be used. Default None
         unit : Optional[pint.Unit  |  str], optional
             The unit of the variable. This can be a pint.Unit object, a string in siunitx format (e.g. `\meter\per\second\squared`), written fully (meter per second squared), or abbreviated (m/s^2 or m s^-2). If None, the value will be assumed to be dimensionless. Default None
         """
-        super().__init__(value, fmt, unit)
         self.name = Literal(name)
+        if isinstance(value, Token):
+            value = value.value
+        self._quantity = Quantity(value, fmt=fmt, unit=unit)
 
     def __str__(self) -> str:
-        return self.name.__str__()
+        return str(self.name)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        return self._quantity(*args, **kwargs)
+
+    @property
+    def value(self) -> Any:
+        return self._quantity.value
+
+    @value.setter
+    def value(self, val: Any) -> None:
+        if isinstance(val, Token):
+            val = val.value
+        self._quantity.value = val
+
+    @property
+    def unit(self) -> pint.Unit:
+        return self._quantity.unit
+
+    @unit.setter
+    def unit(self, u: pint.Unit | str) -> None:
+        self._quantity.unit = u
+
+    @property
+    def fmt(self) -> str:
+        return self._quantity.fmt
+
+    @fmt.setter
+    def fmt(self, f: str) -> None:
+        self._quantity.fmt = f
+
+    def as_quantity(self) -> Quantity:
+        return self._quantity
 
 
 def as_token(value: Token | str | float | List | Tuple | Set | pint.Quantity) -> Token:
@@ -1006,14 +1051,14 @@ symbol = as_token
 sym = as_token
 
 
-class _UnaryOperator(Quantity, ABC):
+class _UnaryOperator(CallableToken, ABC):
     precedence: int = 30
     bracket_right: bool = True
 
     def __init__(self, value: CallableToken | str | float) -> "_UnaryOperator":
         self.right = as_token(value)
         self.symbol = ""
-        self._value = None
+        self._unit = None
 
     def _should_group_operand(self, operand: Token) -> bool:
         operand_precedence = getattr(operand, "precedence", 100)
@@ -1041,31 +1086,29 @@ class _UnaryOperator(Quantity, ABC):
 
     @property
     def value(self) -> Any:
-        if self._value is None:
-            self._value = self._operation(self.right)
-        return self._value
+        val = self._operation(self.right)
+        if self._unit is not None and isinstance(val, pint.Quantity):
+            val = val.to(self._unit)
+        return val
 
     @property
     def unit(self) -> pint.Unit:
-        if isinstance(self.value, Quantity):
-            return self.value.unit
-        elif isinstance(self.value, pint.Quantity):
-            return self.value.units
+        if self._unit is not None:
+            return self._unit
+        val = self.value
+        if isinstance(val, pint.Quantity):
+            return val.units
         return None
 
     @unit.setter
     def unit(self, unit: pint.Unit | str):
-        if isinstance(self.value, Quantity):
-            self.value.unit = unit
-        elif isinstance(self.value, pint.Quantity):
-            self._value = self.value.to(unit)
+        val = self.value
+        if isinstance(val, pint.Quantity):
+            self._unit = parse_unit(unit)
         else:
             raise ValueError(
-                f"Cannot set unit of non-Quantity of type {str(type(self.value)).replace('<', '').replace('>', '')}"
+                f"Cannot set unit of non-Quantity of type {str(type(val)).replace('<', '').replace('>', '')}"
             )
-
-    def as_quantity(self) -> Quantity:
-        return Quantity(self.value)
 
 
 class Negation(_UnaryOperator):
@@ -1118,7 +1161,7 @@ class _BinaryOperator(CallableToken, ABC):
         self.left = as_token(left)
         self.right = as_token(right)
         self.symbol = ""
-        self._value = None
+        self._unit = None
 
     def _should_group_operand(self, operand: Token, is_right: bool = False) -> bool:
         operand_precedence = getattr(operand, "precedence", 100)
@@ -1162,44 +1205,29 @@ class _BinaryOperator(CallableToken, ABC):
 
     @property
     def value(self) -> Any:
-        if self._value is None:
-            self._value = self._operation(self.left, self.right)
-        return self._value
+        val = self._operation(self.left, self.right)
+        if self._unit is not None and isinstance(val, pint.Quantity):
+            val = val.to(self._unit)
+        return val
 
     @property
     def unit(self) -> pint.Unit:
-        if isinstance(self.value, Quantity):
-            return self.value.unit
-        elif isinstance(self.value, pint.Quantity):
-            return self.value.units
+        if self._unit is not None:
+            return self._unit
+        val = self.value
+        if isinstance(val, pint.Quantity):
+            return val.units
         return None
 
     @unit.setter
     def unit(self, unit: pint.Unit | str):
-        if isinstance(self.value, Quantity):
-            self.value.unit = unit
-        elif isinstance(self.value, pint.Quantity):
-            self._value = self.value.to(unit)
+        val = self.value
+        if isinstance(val, pint.Quantity):
+            self._unit = parse_unit(unit)
         else:
             raise ValueError(
-                f"Cannot set unit of non-Quantity of type {str(type(self.value)).replace('<', '').replace('>', '')}"
+                f"Cannot set unit of non-Quantity of type {str(type(val)).replace('<', '').replace('>', '')}"
             )
-
-    def as_quantity(self) -> Quantity:
-        """Convert the operation object to a Quantity with the value and units of the operation.
-
-        Returns
-        -------
-        Quantity
-            The Quantity object with the value and units of the operation.
-        """
-        return Quantity(self.value)
-
-    def __float__(self) -> float:
-        return float(self.value)
-
-    def __int__(self) -> int:
-        return int(self.value)
 
 
 class Addition(_BinaryOperator):
@@ -2084,27 +2112,31 @@ class PartialDerivative(Derivative):
 
 class NthRoot(CallableToken):
     def __init__(
-        self, value: Token | str | float, root: Token | str | float
+        self, expr: Token | str | float, root: Token | str | float = 2
     ) -> "NthRoot":
         """The nth root of a value, such as `\\sqrt{a}` or `\\sqrt[3]{a}`.
 
         Parameters
         ----------
-        value : Token | str | float
+        expr : Token | str | float
             The value to be rooted.
         root : Token | str | float
-            The order of the root. If this is 2, the root will be a square root (rendered with `\\sqrt`), if 3 it will be a cube root (rendered with `\\sqrt[3]`), etc.
+            The order of the root. If this is 2, the root will be a square root (rendered with `\\sqrt`), if 3 it will be a cube root (rendered with `\\sqrt[3]`), etc. Default 2
         """
-        self.value = as_token(value)
+        self.expr = as_token(expr)
         self.root = as_token(root)
 
     def __str__(self) -> str:
         if self.root.value == 2:
-            return f"\\sqrt{{{self.value}}}"
-        return f"\\sqrt[{self.root}]{{{self.value}}}"
+            return f"\\sqrt{{{self.expr}}}"
+        return f"\\sqrt[{self.root}]{{{self.expr}}}"
+
+    @property
+    def value(self) -> Any:
+        return self.expr.value ** (1 / self.root.value)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
-        return Quantity(self.value.value ** (1 / self.root.value))(*args, **kwargs)
+        return Quantity(self.value)(*args, **kwargs)
 
 
 def sqrt(value: Token | str | float) -> NthRoot:

@@ -256,44 +256,6 @@ def raise_parsing_error(
 
 
 # ==============================================================================
-# Domain Models & Directives
-# ==============================================================================
-
-
-class DirectiveKind(Enum):
-    """Categories of preprocessor directives supported by Pyndoc."""
-
-    VARIABLE = auto()  # %var or %%var
-    FUNCTION_CALL = auto()  # %func(...) or %%func(...)
-    EXPRESSION = auto()  # %(expr) or %%(expr)
-    CODE_BLOCK = auto()  # %{ code } or %%{ code }
-    PYTHON_FILE = auto()  # %%%py{path}
-    MARKDOWN_FILE = auto()  # %%%md{path}
-    MARKDOWN_DIR = auto()  # %%%mddir{path}
-    CONDITIONAL_MD = auto()  # %%%mdifformat{ fmt: path; }
-
-
-class OutputPlacement(Enum):
-    """Explicit placement overrides for directives."""
-
-    AUTO = auto()
-    INLINE = auto()
-    BLOCK = auto()
-
-
-@dataclass(frozen=True)
-class DirectiveSpec:
-    """Parsed metadata for an inline macro or expression directive."""
-
-    code: str
-    is_double: bool
-    is_quiet: bool
-    placement: OutputPlacement = OutputPlacement.AUTO
-    format_specifier: str | None = None
-    is_solo: bool = False
-
-
-# ==============================================================================
 # Indentation & Text Utilities
 # ==============================================================================
 
@@ -313,11 +275,6 @@ def deindent(code: str) -> str:
     Raises:
         PreprocessorError: If inconsistent indentation is encountered.
     """
-    # 1. Replace tab characters with 4 spaces and split into lines
-    # 2. Measure indentation of the first line (count of leading spaces)
-    # 3. Strip that exact indentation from each subsequent line
-    # 4. Throw PreprocessorError if a non-empty line has inconsistent/lesser indentation
-    # 5. Rejoin and return cleaned lines
     lines = code.splitlines()
 
     def replace_tabs(string: str) -> tuple[str, bool | None]:
@@ -381,10 +338,6 @@ def is_only_text_on_line(text: str, start: int, end: int) -> bool:
         True if all characters preceding `start` and succeeding `end` on their
         respective lines are whitespace.
     """
-    # 1. Locate start and end line boundaries using newlines around start and end
-    # 2. Inspect characters preceding 'start' on the first line (must be whitespace only)
-    # 3. Inspect characters following 'end' on the final line (must be whitespace only)
-    # 4. Return True if both before and after are empty/whitespace
     line_start = text.rfind("\n", 0, start)
     line_end = text.find("\n", end)
 
@@ -494,10 +447,6 @@ def read_dollar_math_span(contents: str, start: int) -> tuple[int, str]:
     Returns:
         A tuple of (number of characters consumed, verbatim math text).
     """
-    # 1. Check whether opening delimiter is inline ('$') or display ('$$')
-    # 2. Scan forward for matching unescaped closing delimiter ('$' or '$$')
-    # 3. Raise PreprocessorParsingError if closing delimiter is missing before EOF
-    # 4. Return (consumed_character_count, verbatim_math_string)
     if start >= len(contents):
         return 0, ""
 
@@ -693,11 +642,6 @@ def find_matching_bracket(
     Raises:
         PreprocessorParsingError: If closing bracket is missing or unterminated.
     """
-    # 1. Map opening bracket at start to its corresponding closing bracket
-    # 2. Initialize depth counter at 1 and advance through characters
-    # 3. Skip escaped characters ('\\') and advance past string literals (find_string_end) unless strict
-    # 4. Increment depth on opening bracket; decrement on closing bracket (handling single/double)
-    # 5. When depth reaches 0, return index; raise PreprocessorParsingError if EOF reached
     bracket_map = {"(": ")", "{": "}", "[": "]", "<": ">"}
     opening = contents[start]
     closing = bracket_map[opening]
@@ -934,11 +878,6 @@ def format_as_markdown(
     Returns:
         Pandoc Markdown string (e.g. ` `` print(a) ``{.py} `).
     """
-    # 1. If not double ('%%') and not quiet, wrap macro in print() or format specifier template
-    # 2. Assemble Pandoc class string: '.py-md' if is_double else '.py'
-    # 3. Append modifier classes: '.quiet' if is_quiet, '.inline' or '.block' if specified
-    # 4. If is_solo is True, format as multiline fenced block: ```{classes}\n{macro}\n```
-    # 5. Otherwise, format as inline backticks: `` {macro} ``{classes}
     if not is_double and not is_quiet:
         macro = clean_macro(macro)
         if specifier is not None:
@@ -975,9 +914,6 @@ def format_block_as_markdown(
     Returns:
         Pandoc-formatted code block string.
     """
-    # 1. Assemble Pandoc class string: '.py' plus '.quiet' if is_quiet is True
-    # 2. If is_solo is True, wrap in fenced code block: ```{classes}\n{block}\n```
-    # 3. Otherwise, wrap in inline double backticks: `` {block} ``{classes}
     classes = [".py"]
 
     if is_quiet:
@@ -1008,11 +944,6 @@ def read_pyndoc_macro(contents: str, start: int) -> tuple[int, str]:
     Returns:
         A tuple of (characters consumed, replacement Markdown text).
     """
-    # 1. Check for AST flag ('%%' vs '%')
-    # 2. Extract macro expression using get_macro (identifiers, chained calls/subscripts, or parenthesized expressions)
-    # 3. Check for format specifier (':fmt') and quiet flag (';')
-    # 4. Check if solitary on line with is_only_text_on_line
-    # 5. Return (consumed_characters, format_as_markdown(...))
 
     # Note: No longer supporting `'i'` and `'b'` indicators; they're not
     # necessary anymore
@@ -1080,11 +1011,6 @@ def read_pyndoc_block(contents: str, start: int) -> tuple[int, str]:
     Returns:
         A tuple of (characters consumed, replacement Markdown text).
     """
-    # 1. Find closing bracket of block using find_matching_bracket
-    # 2. Extract inner code, strip outer newlines, and normalize indentation with deindent()
-    # 3. Check for trailing quiet flag (';')
-    # 4. Check if solitary on line with is_only_text_on_line
-    # 5. Return (consumed_characters, format_block_as_markdown(...))
     if start >= len(contents):
         return 0, ""
 
@@ -1128,11 +1054,7 @@ def read_pyndoc_file(
     Returns:
         A tuple of (characters consumed, replacement Markdown text).
     """
-    # 1. Find closing bracket of '%%%py{...}' using find_matching_bracket
-    # 2. Extract filename path and substitute '{format}' with target_format
-    # 3. Check for quiet flag (';') and solitary line placement
-    # 4. Format as inline backticks or fenced block with class '.py-file'
-    # 5. Return (consumed_characters, formatted_markdown)
+    
     if start >= len(contents):
         return 0, ""
 

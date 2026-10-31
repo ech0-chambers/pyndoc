@@ -168,3 +168,4 @@ testing/
 src/pyndoc/_latex.py
 src/pyndoc/preprocess.py.bak
 tests/
+src/pyndoc/markdown.py.bak

@@ -286,12 +286,12 @@ def cite(
     citelist: list[pf.Citation] = []
 
     if citations is not None:
-        raw_cites = [citations] if isinstance(citations, (pf.Citation, str)) else citations
-        for c in raw_cites:
-            if isinstance(c, pf.Citation):
-                citelist.append(c)
+        raw_citations = [citations] if isinstance(citations, (pf.Citation, str)) else citations
+        for raw_citation in raw_citations:
+            if isinstance(raw_citation, pf.Citation):
+                citelist.append(raw_citation)
             else:
-                citelist.append(citation(str(c)))
+                citelist.append(citation(str(raw_citation)))
 
     return pf.Cite(*inlines, citations=citelist)
 

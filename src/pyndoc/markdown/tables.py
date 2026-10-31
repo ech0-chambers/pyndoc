@@ -214,19 +214,19 @@ def table(
     body_element = pf.TableBody(*body_rows)
 
     # Build Caption
-    cap_element = None
+    caption_element = None
     if caption:
         if isinstance(caption, pf.Caption):
-            cap_element = caption
+            caption_element = caption
         else:
             cap_inlines = as_inlines(caption, caller="table")
-            cap_element = pf.Caption(pf.Plain(*cap_inlines))
+            caption_element = pf.Caption(pf.Plain(*cap_inlines))
 
     return pf.Table(
         body_element,
         head=head_element,
         colspec=colspec,
-        caption=cap_element,
+        caption=caption_element,
         identifier=clean_identifier(identifier),
         classes=clean_classes(classes),
         attributes=clean_attributes(attributes),
@@ -302,13 +302,13 @@ def _resolve_alignments(
         align_str = resolve_alignment(alignments).value
         return [align_str] * num_cols
 
-    res = []
+    result = []
     for a in alignments:
-        res.append(resolve_alignment(a).value)
+        result.append(resolve_alignment(a).value)
 
-    while len(res) < num_cols:
-        res.append(Alignment.DEFAULT.value)
-    return res[:num_cols]
+    while len(result) < num_cols:
+        result.append(Alignment.DEFAULT.value)
+    return result[:num_cols]
 
 
 def _resolve_widths(widths: Sequence[float] | float | None, num_cols: int) -> list[Any]:
@@ -319,13 +319,13 @@ def _resolve_widths(widths: Sequence[float] | float | None, num_cols: int) -> li
     if isinstance(widths, (int, float)):
         return [float(widths)] * num_cols
 
-    res = []
+    result = []
     for w in widths:
         if w is None or w == "auto" or w == "ColWidthDefault":
-            res.append("ColWidthDefault")
+            result.append("ColWidthDefault")
         else:
-            res.append(float(w))
+            result.append(float(w))
 
-    while len(res) < num_cols:
-        res.append("ColWidthDefault")
-    return res[:num_cols]
+    while len(result) < num_cols:
+        result.append("ColWidthDefault")
+    return result[:num_cols]

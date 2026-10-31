@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 import builtins
+import math
 from typing import Optional, Any
 from .config import ACTIVE_CONFIG
 from .core import (
@@ -134,6 +135,90 @@ class AbsoluteValue(Bracket):
         return as_token(val)(*args, **kwargs)
 
 
+class Norm(Bracket):
+    def __init__(
+        self, *children: str | float | Token, scale: bool = False
+    ) -> None:
+        r"""A norm expression, such as `\|a + b\|`."""
+        super().__init__(*children, scale=scale)
+        self.left_bracket = "\\|"
+        self.right_bracket = "\\|"
+
+    @property
+    def value(self) -> Any:
+        child_val = super().value
+        if child_val is None:
+            return None
+        try:
+            return builtins.abs(child_val)
+        except TypeError:
+            return None
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        val = self.value
+        if val is None:
+            raise ValueError(
+                "Cannot evaluate Norm of expression without a numeric value"
+            )
+        return as_token(val)(*args, **kwargs)
+
+
+class Floor(Bracket):
+    def __init__(
+        self, *children: str | float | Token, scale: bool = False
+    ) -> None:
+        r"""A floor expression, such as `\lfloor a \rfloor`."""
+        super().__init__(*children, scale=scale)
+        self.left_bracket = "\\lfloor"
+        self.right_bracket = "\\rfloor"
+
+    @property
+    def value(self) -> Any:
+        child_val = super().value
+        if child_val is None:
+            return None
+        try:
+            return math.floor(child_val)
+        except TypeError:
+            return None
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        val = self.value
+        if val is None:
+            raise ValueError(
+                "Cannot evaluate Floor of expression without a numeric value"
+            )
+        return as_token(val)(*args, **kwargs)
+
+
+class Ceil(Bracket):
+    def __init__(
+        self, *children: str | float | Token, scale: bool = False
+    ) -> None:
+        r"""A ceiling expression, such as `\lceil a \rceil`."""
+        super().__init__(*children, scale=scale)
+        self.left_bracket = "\\lceil"
+        self.right_bracket = "\\rceil"
+
+    @property
+    def value(self) -> Any:
+        child_val = super().value
+        if child_val is None:
+            return None
+        try:
+            return math.ceil(child_val)
+        except TypeError:
+            return None
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Literal:
+        val = self.value
+        if val is None:
+            raise ValueError(
+                "Cannot evaluate Ceil of expression without a numeric value"
+            )
+        return as_token(val)(*args, **kwargs)
+
+
 class MixedBracket(Bracket):
     __bracket_shorthands = {
         "<": "\\langle",
@@ -242,6 +327,21 @@ def angle_bracket(*children: Token | str | float) -> AngleBracket:
     return AngleBracket(*children)
 
 
+def norm(*children: Token | str | float, scale: bool = False) -> Norm:
+    r"""The norm of an expression, such as `\|a\|`."""
+    return Norm(*children, scale=scale)
+
+
+def floor(*children: Token | str | float, scale: bool = False) -> Floor:
+    r"""The floor of an expression, such as `\lfloor a \rfloor`."""
+    return Floor(*children, scale=scale)
+
+
+def ceil(*children: Token | str | float, scale: bool = False) -> Ceil:
+    r"""The ceiling of an expression, such as `\lceil a \rceil`."""
+    return Ceil(*children, scale=scale)
+
+
 register_token_converter(
     list, lambda v: SquareBracket(*[as_token(x) for x in v], scale=True)
 )
@@ -262,6 +362,9 @@ __all__ = [
     "CurlyBracket",
     "AngleBracket",
     "AbsoluteValue",
+    "Norm",
+    "Floor",
+    "Ceil",
     "MixedBracket",
     "ArrayIndex",
     "bracket",
@@ -272,5 +375,8 @@ __all__ = [
     "absolute",
     "abs",
     "angle_bracket",
+    "norm",
+    "floor",
+    "ceil",
 ]
 

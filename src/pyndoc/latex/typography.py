@@ -2,7 +2,7 @@
 
 import re
 from typing import List, Tuple
-from .core import Token, Macro
+from .core import Token, Macro, as_token
 
 
 def sanitise_latex_text(text_val: str) -> str:
@@ -49,6 +49,34 @@ def textit(content: str) -> Macro:
 def textsc(content: str) -> Macro:
     """Encapsulate text in LaTeX `\\textsc` (small caps font) macro with escaping."""
     return Macro("textsc", sanitise_latex_text(content))
+
+
+def mathbf(content: Token | str | float) -> Macro:
+    """Encapsulate math expression in LaTeX `\\mathbf` (bold math font)."""
+    return Macro("mathbf", as_token(content))
+
+
+def mathrm(content: Token | str | float) -> Macro:
+    """Encapsulate math expression in LaTeX `\\mathrm` (roman upright math font)."""
+    return Macro("mathrm", as_token(content))
+
+
+def mathbb(content: Token | str | float) -> Macro:
+    """Encapsulate math expression in LaTeX `\\mathbb` (blackboard bold math font)."""
+    return Macro("mathbb", as_token(content))
+
+
+def mathcal(content: Token | str | float) -> Macro:
+    """Encapsulate math expression in LaTeX `\\mathcal` (calligraphic math font)."""
+    return Macro("mathcal", as_token(content))
+
+
+def boldsymbol(content: Token | str | float) -> Macro:
+    """Encapsulate math expression in LaTeX `\\boldsymbol` (bold symbol font)."""
+    return Macro("boldsymbol", as_token(content))
+
+
+bm = boldsymbol
 
 
 def dot(expr: Token | str | float) -> Macro:
@@ -142,6 +170,12 @@ __all__ = [
     "textbf",
     "textit",
     "textsc",
+    "mathbf",
+    "mathrm",
+    "mathbb",
+    "mathcal",
+    "boldsymbol",
+    "bm",
     "dot",
     "ddot",
     "hat",

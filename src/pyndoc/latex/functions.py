@@ -692,6 +692,15 @@ def dfrac(numerator: Token | str | float, denominator: Token | str | float) -> D
     return Division(numerator, denominator, display_mode=True)
 
 
+det = OperatorGenerator(Macro("det"))
+gcd = OperatorGenerator(Macro("gcd"))
+lcm = OperatorGenerator(Macro("operatorname", "lcm"))
+tr = OperatorGenerator(Macro("operatorname", "tr"))
+trace = tr
+min_ = OperatorGenerator(Macro("min"))
+max_ = OperatorGenerator(Macro("max"))
+
+
 __all__ = [
     "NthRoot",
     "sqrt",
@@ -702,6 +711,13 @@ __all__ = [
     "math_sub",
     "frac",
     "dfrac",
+    "det",
+    "gcd",
+    "lcm",
+    "tr",
+    "trace",
+    "min_",
+    "max_",
     "_TrigFunction",
     "Sine",
     "Cosine",

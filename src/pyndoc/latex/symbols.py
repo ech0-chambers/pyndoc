@@ -47,12 +47,57 @@ Psi = Macro("Psi")
 Omega = Macro("Omega")
 
 nabla = Macro("nabla")
+partial = Macro("partial")
+hbar = Macro("hbar")
 i = Literal("i")
 
 zero, one, two, three, four, five, six, seven, eight, nine = map(Literal, range(10))
 inf = Macro("infty")
 infinity = inf
 infty = inf
+
+# Multiplication, Arithmetic & Relational Symbols
+cdot = Macro("cdot")
+pm = Macro("pm")
+plusminus = pm
+mp = Macro("mp")
+minusplus = mp
+times = Macro("times")
+propto = Macro("propto")
+sim = Macro("sim")
+ll = Macro("ll")
+gg = Macro("gg")
+implies = Macro("implies")
+iff = Macro("iff")
+
+# Ellipses
+dots = Macro("dots")
+ldots = Macro("ldots")
+cdots = Macro("cdots")
+vdots = Macro("vdots")
+ddots = Macro("ddots")
+
+# Logic & Set Theory
+forall = Macro("forall")
+exists = Macro("exists")
+in_ = Macro("in")
+notin = Macro("notin")
+subset = Macro("subset")
+subseteq = Macro("subseteq")
+cap = Macro("cap")
+cup = Macro("cup")
+
+# Standard Number Sets
+RR = Macro("mathbb", "R")
+Reals = RR
+CC = Macro("mathbb", "C")
+Complexes = CC
+ZZ = Macro("mathbb", "Z")
+Integers = ZZ
+NN = Macro("mathbb", "N")
+Naturals = NN
+QQ = Macro("mathbb", "Q")
+Rationals = QQ
 
 # Punctuation & Spacing Literals
 comma = Literal("\\,,")
@@ -108,6 +153,8 @@ __all__ = [
     "Omega",
     # Constants & Digits
     "nabla",
+    "partial",
+    "hbar",
     "i",
     "zero",
     "one",
@@ -122,6 +169,45 @@ __all__ = [
     "inf",
     "infinity",
     "infty",
+    # Arithmetic & Relational Symbols
+    "cdot",
+    "pm",
+    "plusminus",
+    "mp",
+    "minusplus",
+    "times",
+    "propto",
+    "sim",
+    "ll",
+    "gg",
+    "implies",
+    "iff",
+    # Ellipses
+    "dots",
+    "ldots",
+    "cdots",
+    "vdots",
+    "ddots",
+    # Logic & Set Theory
+    "forall",
+    "exists",
+    "in_",
+    "notin",
+    "subset",
+    "subseteq",
+    "cap",
+    "cup",
+    # Standard Number Sets
+    "RR",
+    "Reals",
+    "CC",
+    "Complexes",
+    "ZZ",
+    "Integers",
+    "NN",
+    "Naturals",
+    "QQ",
+    "Rationals",
     # Punctuation & Spacing Literals
     "comma",
     "period",

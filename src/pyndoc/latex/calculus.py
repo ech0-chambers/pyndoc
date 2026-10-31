@@ -52,11 +52,28 @@ class Integral(LimitsExpression):
         lower: Token | Any = None,
         upper: Token | Any = None,
         variable: Token | Any = None,
+        operator: str = "int",
     ):
         """An integral expression, such as `\\int_{a}^{b} f(x) dx`."""
+        suffix = Macro(",") & Macro("mathrm", "d") & variable if variable is not None else None
         super().__init__(
-            "int", expr, lower, upper, Macro(",") & Macro("mathrm", "d") & variable
+            operator, expr, lower, upper, suffix
         )
+
+
+class ContourIntegral(Integral):
+    def __init__(
+        self,
+        expr: Token | Any,
+        lower: Token | Any = None,
+        upper: Token | Any = None,
+        variable: Token | Any = None,
+    ):
+        """A contour or closed-loop integral, such as `\\oint_{C} f(z) dz`."""
+        super().__init__(expr, lower, upper, variable, operator="oint")
+
+
+oint = ContourIntegral
 
 
 class Limit(LimitsExpression):
@@ -92,6 +109,26 @@ class Summation(LimitsExpression):
         else:
             lower_expr = as_token(variable) == as_token(lower)
         super().__init__("sum", expr, lower=lower_expr, upper=upper)
+
+
+class Product(LimitsExpression):
+    def __init__(
+        self,
+        expr: Token | Any,
+        lower: Token | Any = None,
+        variable: Token | Any = None,
+        upper: Token | Any = None,
+    ):
+        """A product expression, such as `\\prod_{i = 0}^{n} a_i`."""
+        if lower is None and variable is None:
+            lower_expr = None
+        elif lower is None:
+            lower_expr = as_token(variable)
+        elif variable is None:
+            lower_expr = as_token(lower)
+        else:
+            lower_expr = as_token(variable) == as_token(lower)
+        super().__init__("prod", expr, lower=lower_expr, upper=upper)
 
 
 class Derivative(Token):
@@ -190,8 +227,11 @@ __all__ = [
     "Tends",
     "LimitsExpression",
     "Integral",
+    "ContourIntegral",
+    "oint",
     "Limit",
     "Summation",
+    "Product",
     "Derivative",
     "PartialDerivative",
 ]

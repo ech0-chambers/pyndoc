@@ -269,6 +269,7 @@ class DirectiveKind(Enum):
     CODE_BLOCK = auto()  # %{ code } or %%{ code }
     PYTHON_FILE = auto()  # %%%py{path}
     MARKDOWN_FILE = auto()  # %%%md{path}
+    MARKDOWN_DIR = auto()  # %%%mddir{path}
     CONDITIONAL_MD = auto()  # %%%mdifformat{ fmt: path; }
 
 
@@ -1186,6 +1187,15 @@ def read_pyndoc_file(
                 target_format,
                 is_quiet=is_quiet,
             )
+        case "mddir":
+            formatted_block = include_md_dir(
+                block,
+                contents,
+                block_start,
+                block_end,
+                target_format,
+                is_quiet=is_quiet,
+            )
         case "mdifformat":
             formatted_block = include_md_conditional_file(
                 block,
@@ -1291,6 +1301,76 @@ def include_md_file(
 
     file_contents = preprocess(file_contents, target_format)
     return "" if is_quiet else file_contents
+
+
+def include_md_dir(
+    dirname: str,
+    contents: str,
+    start: int,
+    end: int,
+    target_format: str | None = None,
+    is_quiet: bool = False,
+) -> str:
+    """Read, preprocess, and concatenate all Markdown files in a directory.
+
+    Searches the directory for '.md' and '.markdown' files and includes all of
+    them in alphabetical filename order.
+
+    Args:
+        dirname: Relative or absolute path to the directory.
+        contents: Parent document text (for error reporting).
+        start: Starting character index of the directory block in parent document.
+        end: Ending character index of the directory block in parent document.
+        target_format: The target format passed to Pandoc.
+        is_quiet: If True, suppresses output (returns empty string).
+
+    Returns:
+        Concatenated preprocessed Markdown text from all files in the directory.
+    """
+    target_fmt = target_format or ""
+    dirname = dirname.strip().replace("{format}", target_fmt)
+    dirpath = Path(dirname)
+
+    if not dirpath.exists():
+        raise_parsing_error(
+            contents,
+            start,
+            f"Markdown directory does not exist: '{dirname}'",
+            end - start,
+            FileNotFoundError,
+        )
+    if not dirpath.is_dir():
+        raise_parsing_error(
+            contents,
+            start,
+            f"Filepath exists but is not a directory: '{dirname}'",
+            end - start,
+            NotADirectoryError,
+        )
+
+    md_files = [
+        p
+        for p in dirpath.iterdir()
+        if p.is_file() and p.suffix.lower() in (".md", ".markdown")
+    ]
+    md_files.sort(key=lambda p: p.name)
+
+    if not md_files or is_quiet:
+        return ""
+
+    processed_sections = [
+        include_md_file(
+            str(p),
+            contents,
+            start,
+            end,
+            target_format=target_format,
+            is_quiet=False,
+        )
+        for p in md_files
+    ]
+
+    return "\n\n".join(processed_sections)
 
 
 def include_md_conditional_file(

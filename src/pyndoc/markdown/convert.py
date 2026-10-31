@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import panflute as pf
 
@@ -15,14 +16,18 @@ __all__ = ["convert_from_string"]
 def convert_from_string(
     text: str,
     preprocess: bool = False,
-    format: str | None = "panflute",
+    output_format: str | None = "panflute",
+    **kwargs: Any,
 ) -> str | list[pf.Element]:
     """Convert a markdown string to Panflute AST elements or target markup."""
+    if "format" in kwargs:
+        output_format = kwargs.pop("format")
+
     if preprocess:
         from pyndoc.preprocess import preprocess as preprocess_text
 
-        if format != "panflute":
-            text = preprocess_text(text, target_format=format)
+        if output_format != "panflute":
+            text = preprocess_text(text, target_format=output_format)
         else:
             text = preprocess_text(text)
 
@@ -36,7 +41,7 @@ def convert_from_string(
         input_format="markdown",
         extra_args=[f"--filter={filter_file.resolve().absolute()}"],
         standalone=False,
-        output_format=format,
+        output_format=output_format,
     )
     logger.debug(f"Output from markdown conversion: {output}")
     return output

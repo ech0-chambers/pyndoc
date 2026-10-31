@@ -45,6 +45,7 @@ Repository = "https://github.com/ech0-chambers/pyndoc"
 
 [project.scripts]
 pyndoc = "pyndoc.__main__:main"
+pyndoc-filter = "pyndoc.filter:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

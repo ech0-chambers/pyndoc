@@ -79,7 +79,12 @@ class Bracket(_Container):
 
     def __str__(self) -> str:
         scale_left, scale_right = ("\\left", "\\right") if self.scale else ("", "")
-        return f"{scale_left}{self.left_bracket} {', '.join(str(child) for child in self.children)} {scale_right}{self.right_bracket}"
+        # Command delimiters ending in letters (e.g. \lfloor, \langle, \lbrace) require
+        # whitespace separation to prevent TeX syntax collisions with adjacent tokens.
+        left_pad = " " if self.left_bracket and self.left_bracket[-1].isalpha() else ""
+        right_pad = " " if self.right_bracket and self.right_bracket[-1].isalpha() else ""
+        inner = ", ".join(str(child) for child in self.children)
+        return f"{scale_left}{self.left_bracket}{left_pad}{inner}{right_pad}{scale_right}{self.right_bracket}"
 
 
 class SquareBracket(Bracket):
@@ -310,38 +315,46 @@ class ArrayIndex(Token):
         return str(Concatenation(*output))
 
 
-def bracket(*children: Token | str | float) -> Bracket:
+def bracket(*children: Token | str | float, scale: bool = False) -> Bracket:
     """A set of brackets, such as `(a, b, c)`."""
-    return Bracket(*children)
+    return Bracket(*children, scale=scale)
 
 
 paren = bracket
 
 
-def square_bracket(*children: Token | str | float) -> SquareBracket:
+def square_bracket(
+    *children: Token | str | float, scale: bool = False
+) -> SquareBracket:
     """A set of square brackets, such as `[a, b, c]`."""
-    return SquareBracket(*children)
+    return SquareBracket(*children, scale=scale)
 
 
-def curly_bracket(*children: Token | str | float) -> CurlyBracket:
+def curly_bracket(
+    *children: Token | str | float, scale: bool = False
+) -> CurlyBracket:
     """A set of curly brackets, such as `{a, b, c}`."""
-    return CurlyBracket(*children)
+    return CurlyBracket(*children, scale=scale)
 
 
 brace = curly_bracket
 
 
-def absolute(*children: Token | str | float) -> AbsoluteValue:
+def absolute(
+    *children: Token | str | float, scale: bool = False
+) -> AbsoluteValue:
     """The absolute value of an expression, such as `|a|`."""
-    return AbsoluteValue(*children)
+    return AbsoluteValue(*children, scale=scale)
 
 
-abs = absolute
+abs = absolute  # noqa: A001
 
 
-def angle_bracket(*children: Token | str | float) -> AngleBracket:
+def angle_bracket(
+    *children: Token | str | float, scale: bool = False
+) -> AngleBracket:
     """A set of angle brackets, such as `<a, b, c>`."""
-    return AngleBracket(*children)
+    return AngleBracket(*children, scale=scale)
 
 
 def norm(*children: Token | str | float, scale: bool = False) -> Norm:

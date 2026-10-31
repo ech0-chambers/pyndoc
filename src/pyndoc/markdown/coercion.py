@@ -334,15 +334,21 @@ def para(*contents: Any, caller: str = "para") -> pf.Para:
     return pf.Para(*inlines)
 
 
-def raw_inline(text: str, format: str | None = None) -> pf.RawInline:
+def raw_inline(
+    text: str, output_format: str | None = None, **kwargs: Any
+) -> pf.RawInline:
     """Create a raw inline markup element in the target format (HTML, LaTeX, etc.)."""
-    resolved_format = _resolve_format(format)
+    fmt = kwargs.pop("format", output_format)
+    resolved_format = _resolve_format(fmt)
     return pf.RawInline(text=str(text), format=resolved_format)
 
 
-def raw_block(text: str, format: str | None = None) -> pf.RawBlock:
+def raw_block(
+    text: str, output_format: str | None = None, **kwargs: Any
+) -> pf.RawBlock:
     """Create a raw block markup element in the target format (HTML, LaTeX, etc.)."""
-    resolved_format = _resolve_format(format)
+    fmt = kwargs.pop("format", output_format)
+    resolved_format = _resolve_format(fmt)
     return pf.RawBlock(text=str(text), format=resolved_format)
 
 

@@ -11,6 +11,7 @@ import ast
 import contextlib
 import io
 import logging
+import os
 import sys
 from collections.abc import Collection, Sequence
 from pathlib import Path
@@ -27,6 +28,11 @@ logger = logging.getLogger("pyndoc.filter")
 
 
 USER_NAMESPACE: dict[str, Any] = {}
+
+
+def is_strict_mode() -> bool:
+    """Return whether strict execution mode is enabled (fails build on code errors)."""
+    return os.environ.get("PYNDOC_STRICT", "").strip().lower() in ("1", "true", "yes")
 
 
 def create_user_namespace() -> dict[str, Any]:
@@ -98,14 +104,20 @@ def handle_file(
     # If preprocessor is used, these will have already been caught, but we need
     # to check here anyway in case the preprocessor wasn't used
     if not file.exists():
+        if is_strict_mode():
+            raise FileNotFoundError(f"Pyndoc file directive target not found: {file}")
         return element_type(f"Error: File not found: {file}")
     if not file.is_file():
+        if is_strict_mode():
+            raise ValueError(f"Pyndoc file directive target is not a file: {file}")
         return element_type(f"Error: Not a file: {file}")
 
     try:
         with file.open("r", encoding="utf-8") as f:
             code = f.read()
     except Exception as e:
+        if is_strict_mode():
+            raise
         return element_type(f"Error reading file {file}: {e}")
 
     output_buffer = io.StringIO()
@@ -114,6 +126,10 @@ def handle_file(
             exec(code, USER_NAMESPACE)
     except Exception as e:
         logger.exception(f"Error executing file {file}")
+        if is_strict_mode():
+            raise RuntimeError(
+                f"Pyndoc filter failed executing file {file}: {e}"
+            ) from e
         return element_type(f"Error running file {file}: {e}")
 
     if "quiet" in classes:
@@ -153,6 +169,10 @@ def handle_element(
         result = _evaluate_element_code(code, USER_NAMESPACE)
     except Exception as e:
         logger.exception("Error evaluating expression element")
+        if is_strict_mode():
+            raise RuntimeError(
+                f"Pyndoc filter failed evaluating element code:\n{code}\n{e}"
+            ) from e
         return element_type(f"Error running code: {e}")
 
     if "quiet" in classes:
@@ -210,6 +230,10 @@ def handle_raw(
             exec(code, USER_NAMESPACE)
     except Exception as e:
         logger.exception(f"Error executing raw code block:\n{code}")
+        if is_strict_mode():
+            raise RuntimeError(
+                f"Pyndoc filter failed executing raw code:\n{code}\n{e}"
+            ) from e
         return element_type(f"Error running code: {e}")
 
     if "quiet" in classes:
@@ -237,7 +261,7 @@ def process_code(elem: panflute.Element) -> panflute.Element | list:
     return elem
 
 
-def filter(
+def filter_element(
     elem: panflute.Element, doc: panflute.Doc | None = None
 ) -> panflute.Element | list | None:
     """Main filter function. Processes each code block in the document."""
@@ -245,6 +269,10 @@ def filter(
         logger.debug("-" * 40)
         return process_code(elem)
     return None
+
+
+# Backward-compatible alias
+filter = filter_element  # noqa: A001
 
 
 def prepare(doc: panflute.Doc) -> None:
@@ -261,25 +289,67 @@ def prepare(doc: panflute.Doc) -> None:
 
 def run_filter(doc: panflute.Doc | None = None) -> panflute.Doc | None:
     """Run the Pandoc AST filter on the document."""
-    return panflute.run_filter(filter, prepare=prepare, doc=doc)
+    return panflute.run_filter(filter_element, prepare=prepare, doc=doc)
 
 
-def get_logging() -> None:
-    """Check if there is already an active logger, and if not start one."""
-    log_file = Path("pyndoc.filters.log")
-    if not logging.getLogger().hasHandlers():
-        logging.basicConfig(
-            filename=log_file,
-            filemode="a",
-            level=logging.DEBUG,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            encoding="utf-8",
+def get_default_log_dir() -> Path:
+    """Return the user-level log directory for Pyndoc, falling back to CWD on error."""
+    override = os.environ.get("PYNDOC_LOG_DIR")
+    if override:
+        path = Path(override)
+    elif sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        path = (
+            Path(local_app_data) / "pyndoc"
+            if local_app_data
+            else Path.home() / ".pyndoc"
         )
+    else:
+        state_home = os.environ.get("XDG_STATE_HOME")
+        cache_home = os.environ.get("XDG_CACHE_HOME")
+        base = Path(state_home or cache_home or (Path.home() / ".cache"))
+        path = base / "pyndoc"
+
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    except OSError:
+        return Path(".")
+
+
+def get_logging(log_file: Path | str | None = None) -> None:
+    """Configure logging for the Pyndoc filter."""
+    if log_file is not None:
+        target_path = Path(log_file)
+    else:
+        env_file = os.environ.get("PYNDOC_FILTER_LOG_FILE") or os.environ.get(
+            "PYNDOC_LOG_FILE"
+        )
+        if env_file:
+            target_path = Path(env_file)
+        else:
+            target_path = get_default_log_dir() / "pyndoc.filters.log"
+
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(str(target_path), mode="a", encoding="utf-8")
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
+        logger.addHandler(handler)
+        logger.setLevel(logging.DEBUG)
+    except OSError:
+        logger.addHandler(logging.NullHandler())
+
+
+def main() -> None:
+    """Entry point for pyndoc-filter CLI command."""
+    get_logging()
+    logger.debug("Called filter.py")
+    logger.debug("sys.argv: %s", sys.argv)
+    run_filter()
+    logger.info("Filter run complete.")
 
 
 if __name__ == "__main__":
-    get_logging()
-    logger.debug("Called filter.py")
-    logger.debug("sys.argv: " + str(sys.argv))
-    run_filter()
-    logger.info("Filter run complete.")
+    main()

@@ -246,23 +246,26 @@ def footnote(*contents: Any) -> pf.Note:
 
 
 def citation(
-    id: str,
+    citation_id: str,
     mode: str = "NormalCitation",
     prefix: Any = None,
     suffix: Any = None,
     note_num: int = 0,
-    hash: int = 0,
+    hash_value: int = 0,
+    **kwargs: Any,
 ) -> pf.Citation:
     """Create a citation item for use inside `cite`."""
+    cid = kwargs.pop("id", citation_id)
+    h_val = kwargs.pop("hash", hash_value)
     norm_prefix = as_inlines(prefix, caller="citation") if prefix else []
     norm_suffix = as_inlines(suffix, caller="citation") if suffix else []
     return pf.Citation(
-        id=clean_identifier(id),
+        id=clean_identifier(cid),
         mode=str(mode),
         prefix=norm_prefix,
         suffix=norm_suffix,
         note_num=note_num,
-        hash=hash,
+        hash=h_val,
     )
 
 

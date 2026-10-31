@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import subprocess
 import sys
+import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -15,7 +17,35 @@ from .timer import Timer
 logger = logging.getLogger("pyndoc")
 
 
-def start_logging(logging_level: str | None = None) -> None:
+def get_default_log_dir() -> Path:
+    """Return the user-level log directory for Pyndoc, falling back to CWD on error."""
+    override = os.environ.get("PYNDOC_LOG_DIR")
+    if override:
+        path = Path(override)
+    elif sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        path = (
+            Path(local_app_data) / "pyndoc"
+            if local_app_data
+            else Path.home() / ".pyndoc"
+        )
+    else:
+        state_home = os.environ.get("XDG_STATE_HOME")
+        cache_home = os.environ.get("XDG_CACHE_HOME")
+        base = Path(state_home or cache_home or (Path.home() / ".cache"))
+        path = base / "pyndoc"
+
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    except OSError:
+        return Path(".")
+
+
+def start_logging(
+    logging_level: str | None = None,
+    log_file: Path | str | None = None,
+) -> Path | None:
     level = (logging_level or "DEBUG").upper()
 
     valid_levels = logging.getLevelNamesMapping()
@@ -23,24 +53,54 @@ def start_logging(logging_level: str | None = None) -> None:
         valid_keys = ", ".join(k for k in valid_levels if not k.startswith("NOTSET"))
         raise ValueError(f"Invalid log level: {logging_level!r}. Expected one of: {valid_keys}")
 
-    logging.basicConfig(
-        filename="pyndoc.log",
-        level=level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        filemode="w",
-        encoding="utf-8",
-        force=True,
-    )
-    logger.debug("Created log file from __main__.py")
+    if log_file is not None:
+        target_path = Path(log_file)
+    else:
+        env_log = os.environ.get("PYNDOC_LOG_FILE")
+        if env_log:
+            target_path = Path(env_log)
+        else:
+            target_path = get_default_log_dir() / "pyndoc.log"
+
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        logging.basicConfig(
+            filename=str(target_path),
+            level=level,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            filemode="w",
+            encoding="utf-8",
+            force=True,
+        )
+        logger.debug("Created log file at %s", target_path)
+        return target_path
+    except OSError as e:
+        # Fall back to stderr if writing to log file fails
+        logging.basicConfig(
+            level=level,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            force=True,
+        )
+        logger.warning(
+            "Could not open log file %s (%s); logging to stderr", target_path, e
+        )
+        return None
 
 
 def check_filter_executable(filter_file: Path) -> None:
-    # Checks if the filter file has executable permissions on linux
-    if sys.platform == "linux":
+    """Ensure the filter script has executable permissions on POSIX systems."""
+    if sys.platform != "win32":
         if not filter_file.is_file():
             raise FileNotFoundError(f"Filter file not found: {filter_file}")
-        if not filter_file.stat().st_mode & 0o111:
-            filter_file.chmod(0o755)
+        if not (filter_file.stat().st_mode & 0o111):
+            try:
+                filter_file.chmod(filter_file.stat().st_mode | 0o755)
+            except OSError as e:
+                logger.warning(
+                    "Could not set executable permissions on filter script %s: %s",
+                    filter_file,
+                    e,
+                )
 
 
 def parse_cli_args(argv: Sequence[str]) -> tuple[argparse.Namespace, list[str]]:
@@ -53,6 +113,18 @@ def parse_cli_args(argv: Sequence[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument("--preprocess", action="store_true", help="Preprocess the input file before Pandoc.")
     parser.add_argument("--preprocess-only", action="store_true", help="Run preprocessing only and print output.")
     parser.add_argument("--log-level", default=None, help="Set logging verbosity level.")
+    parser.add_argument(
+        "--log-file",
+        default=None,
+        help="Path to log file (default: user cache directory or PYNDOC_LOG_FILE).",
+    )
+    parser.add_argument(
+        "--strict",
+        "--fail-on-error",
+        dest="strict",
+        action="store_true",
+        help="Abort Pandoc build on filter execution errors instead of inserting inline error text.",
+    )
 
     return parser.parse_known_args(argv)
 
@@ -147,14 +219,12 @@ def find_input_file_index(args: list[str]) -> int:
     return len(args) - 1
 
 
-logging_files = ["pyndoc.log", "pyndoc.filters.log", "pyndoc.server.log"]
-
 return_codes = {
-    1:  "PandocIOError",
-    3:  "PandocFailOnWarningError",
-    4:  "PandocAppError",
-    5:  "PandocTemplateError",
-    6:  "PandocOptionError",
+    1: "PandocIOError",
+    3: "PandocFailOnWarningError",
+    4: "PandocAppError",
+    5: "PandocTemplateError",
+    6: "PandocOptionError",
     21: "PandocUnknownReaderError",
     22: "PandocUnknownWriterError",
     23: "PandocUnsupportedExtensionError",
@@ -186,14 +256,10 @@ return_codes = {
 def main() -> None:
     pyndoc_opts, pandoc_args = parse_cli_args(sys.argv[1:])
 
-    # Clean previous log files
-    for log_file in logging_files:
-        try:
-            Path(log_file).unlink()
-        except FileNotFoundError:
-            pass
+    if pyndoc_opts.strict:
+        os.environ["PYNDOC_STRICT"] = "1"
 
-    start_logging(pyndoc_opts.log_level)
+    start_logging(pyndoc_opts.log_level, log_file=pyndoc_opts.log_file)
 
     target_format = get_format(pandoc_args)
 
@@ -212,9 +278,29 @@ def main() -> None:
                 print(contents)
                 return
 
-            temp_file = target_file.parent / f"{target_file.stem}_tmp{target_file.suffix}"
-            with temp_file.open("w", encoding="utf-8") as f:
-                f.write(contents)
+            # Create a collision-safe temporary file. Try target_file.parent first
+            # to preserve Pandoc relative path resolution, falling back to system tempdir.
+            try:
+                tf = tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=target_file.parent,
+                    prefix=f".{target_file.stem}_",
+                    suffix=f"_tmp{target_file.suffix}",
+                    delete=False,
+                )
+            except OSError:
+                tf = tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    prefix=f"{target_file.stem}_",
+                    suffix=f"_tmp{target_file.suffix}",
+                    delete=False,
+                )
+
+            with tf:
+                tf.write(contents)
+            temp_file = Path(tf.name)
 
             pandoc_args[input_idx] = str(temp_file)
 
@@ -235,12 +321,16 @@ def main() -> None:
             raise RuntimeError(
                 f"Pandoc failed with return code {result.returncode}: {return_codes.get(result.returncode, 'Unknown error')}"
             )
-        else:
-            print(result.stdout.decode("utf-8", errors="replace"))
+        elif result.stdout:
+            sys.stdout.buffer.write(result.stdout)
+            sys.stdout.buffer.flush()
     finally:
         # Guarantee cleanup even on failure or keyboard interrupt
         if temp_file is not None and temp_file.exists():
-            temp_file.unlink()
+            try:
+                temp_file.unlink()
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":

@@ -192,12 +192,14 @@ def figure(
 
 def raw(
     text: str,
-    format: str | None = None,
+    output_format: str | None = None,
     inline: bool = False,
+    **kwargs: Any,
 ) -> pf.RawBlock | pf.RawInline:
     """Insert raw target markup (HTML, LaTeX, etc.)."""
+    fmt = kwargs.pop("format", output_format)
     if inline:
         from pyndoc.markdown.coercion import raw_inline
 
-        return raw_inline(text, format=format)
-    return raw_block(text, format=format)
+        return raw_inline(text, output_format=fmt)
+    return raw_block(text, output_format=fmt)

@@ -1,50 +1,59 @@
 """Mathematical functions, trigonometric operations, exponentials, and logarithms."""
 
 from abc import ABC, abstractmethod
-from typing import Optional, Any
+from typing import Any
+
 import numpy as np
 import pint
+
 from .config import ACTIVE_CONFIG
+from .containers import Bracket, Collection, Sequence
 from .core import (
-    Token,
     CallableToken,
+    Division,
+    Index,
     Literal,
     Macro,
-    Division,
     Power,
-    Index,
+    Token,
+    TokenLike,
     as_token,
 )
-from .containers import Bracket, Collection, Sequence
 
 
 class NthRoot(CallableToken):
     def __init__(
-        self, expr: Token | str | float, root: Token | str | float = 2
+        self, expr: TokenLike, root: TokenLike = 2
     ) -> None:
         """The nth root of a value, such as `\\sqrt{a}` or `\\sqrt[3]{a}`."""
         self.expr = as_token(expr)
         self.root = as_token(root)
 
     def __str__(self) -> str:
-        if self.root.value == 2:
+        if getattr(self.root, "value", None) == 2 or str(self.root) == "2":
             return f"\\sqrt{{{self.expr}}}"
         return f"\\sqrt[{self.root}]{{{self.expr}}}"
 
     @property
     def value(self) -> Any:
-        return self.expr.value ** (1 / self.root.value)
+        expr_val = getattr(self.expr, "value", self.expr)
+        root_val = getattr(self.root, "value", self.root)
+        return expr_val ** (1 / root_val)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
-        return as_token(self.value)(*args, **kwargs)
+        val = self.value
+        tok = as_token(val)
+        if isinstance(tok, CallableToken):
+            return tok(*args, **kwargs)
+        return Literal(str(val))
 
 
-def sqrt(value: Token | str | float) -> NthRoot:
+def sqrt(value: TokenLike) -> NthRoot:
     """The square root of a value, such as `\\sqrt{a}`."""
     return NthRoot(value, 2)
 
 
-def cbrt(value: Token | str | float) -> NthRoot:
+def cbrt(value: TokenLike) -> NthRoot:
     """The cube root of a value, such as `\\sqrt[3]{a}`."""
     return NthRoot(value, 3)
 
@@ -53,8 +62,8 @@ class _TrigFunction(CallableToken, ABC):
     def __init__(
         self,
         name: str,
-        expr: Token | str,
-        power: Optional[Token | Any] = None,
+        expr: TokenLike,
+        power: TokenLike | None = None,
         inverse: bool = False,
     ):
         self.name = name
@@ -67,7 +76,7 @@ class _TrigFunction(CallableToken, ABC):
         return self._operation(self.expr, self.power)
 
     def _eval_angle_arg(self, expr: Token) -> Any:
-        raw_val = expr.value
+        raw_val = getattr(expr, "value", expr)
         if isinstance(raw_val, pint.Quantity):
             unit_dict = dict(raw_val.units._units)
             angle_units = {"degree", "arcdeg", "arcminute", "arcsecond"}
@@ -132,302 +141,344 @@ class _TrigFunction(CallableToken, ABC):
         )
 
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
-        return as_token(self.value)(*args, **kwargs)
+        val = self.value
+        tok = as_token(val)
+        if isinstance(tok, CallableToken):
+            return tok(*args, **kwargs)
+        return Literal(str(val))
 
     @abstractmethod
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
+    def _operation(self, expr: Token, power: Token | None) -> Any:
         pass
 
 
 class Sine(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("sin", expr, power)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
+    def _operation(self, expr: Token, power: Token | None) -> Any:
         val = np.sin(self._eval_angle_arg(expr))
-        return val ** (1 if power is None else power.value)
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class Cosine(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("cos", expr, power)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
+    def _operation(self, expr: Token, power: Token | None) -> Any:
         val = np.cos(self._eval_angle_arg(expr))
-        return val ** (1 if power is None else power.value)
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class Tangent(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("tan", expr, power)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
+    def _operation(self, expr: Token, power: Token | None) -> Any:
         val = np.tan(self._eval_angle_arg(expr))
-        return val ** (1 if power is None else power.value)
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class ArcSine(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("sin", expr, power, inverse=True)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
-        val = self._eval_inverse_result(np.asin(expr.value))
-        return val ** (1 if power is None else power.value)
+    def _operation(self, expr: Token, power: Token | None) -> Any:
+        val = self._eval_inverse_result(np.asin(getattr(expr, "value", expr)))
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class ArcCosine(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("cos", expr, power, inverse=True)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
-        val = self._eval_inverse_result(np.acos(expr.value))
-        return val ** (1 if power is None else power.value)
+    def _operation(self, expr: Token, power: Token | None) -> Any:
+        val = self._eval_inverse_result(np.acos(getattr(expr, "value", expr)))
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class ArcTangent(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("tan", expr, power, inverse=True)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
-        val = self._eval_inverse_result(np.atan(expr.value))
-        return val ** (1 if power is None else power.value)
+    def _operation(self, expr: Token, power: Token | None) -> Any:
+        val = self._eval_inverse_result(np.atan(getattr(expr, "value", expr)))
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class Cosecant(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("csc", expr, power)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
+    def _operation(self, expr: Token, power: Token | None) -> Any:
         val = 1 / np.sin(self._eval_angle_arg(expr))
-        return val ** (1 if power is None else power.value)
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class Secant(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("sec", expr, power)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
+    def _operation(self, expr: Token, power: Token | None) -> Any:
         val = 1 / np.cos(self._eval_angle_arg(expr))
-        return val ** (1 if power is None else power.value)
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class Cotangent(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("cot", expr, power)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
+    def _operation(self, expr: Token, power: Token | None) -> Any:
         val = 1 / np.tan(self._eval_angle_arg(expr))
-        return val ** (1 if power is None else power.value)
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class ArcCosecant(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("csc", expr, power, inverse=True)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
-        val = self._eval_inverse_result(np.asin(1 / expr.value))
-        return val ** (1 if power is None else power.value)
+    def _operation(self, expr: Token, power: Token | None) -> Any:
+        val = self._eval_inverse_result(np.asin(1 / getattr(expr, "value", expr)))
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class ArcSecant(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("sec", expr, power, inverse=True)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
-        val = self._eval_inverse_result(np.acos(1 / expr.value))
-        return val ** (1 if power is None else power.value)
+    def _operation(self, expr: Token, power: Token | None) -> Any:
+        val = self._eval_inverse_result(np.acos(1 / getattr(expr, "value", expr)))
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class ArcCotangent(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("cot", expr, power, inverse=True)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
-        val = self._eval_inverse_result(np.atan(1 / expr.value))
-        return val ** (1 if power is None else power.value)
+    def _operation(self, expr: Token, power: Token | None) -> Any:
+        val = self._eval_inverse_result(np.atan(1 / getattr(expr, "value", expr)))
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class HyperbolicSine(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("sinh", expr, power)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
+    def _operation(self, expr: Token, power: Token | None) -> Any:
         val = np.sinh(self._eval_angle_arg(expr))
-        return val ** (1 if power is None else power.value)
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class HyperbolicCosine(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("cosh", expr, power)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
+    def _operation(self, expr: Token, power: Token | None) -> Any:
         val = np.cosh(self._eval_angle_arg(expr))
-        return val ** (1 if power is None else power.value)
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class HyperbolicTangent(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("tanh", expr, power)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
+    def _operation(self, expr: Token, power: Token | None) -> Any:
         val = np.tanh(self._eval_angle_arg(expr))
-        return val ** (1 if power is None else power.value)
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class HyperbolicCosecant(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("csch", expr, power)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
+    def _operation(self, expr: Token, power: Token | None) -> Any:
         val = 1 / np.sinh(self._eval_angle_arg(expr))
-        return val ** (1 if power is None else power.value)
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class HyperbolicSecant(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("sech", expr, power)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
+    def _operation(self, expr: Token, power: Token | None) -> Any:
         val = 1 / np.cosh(self._eval_angle_arg(expr))
-        return val ** (1 if power is None else power.value)
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class HyperbolicCotangent(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("coth", expr, power)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
+    def _operation(self, expr: Token, power: Token | None) -> Any:
         val = 1 / np.tanh(self._eval_angle_arg(expr))
-        return val ** (1 if power is None else power.value)
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class HyperbolicArcSine(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("sinh", expr, power, inverse=True)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
-        return np.asinh(expr.value) ** (1 if power is None else power.value)
+    def _operation(self, expr: Token, power: Token | None) -> Any:
+        val = np.asinh(getattr(expr, "value", expr))
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class HyperbolicArcCosine(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("cosh", expr, power, inverse=True)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
-        return np.acosh(expr.value) ** (1 if power is None else power.value)
+    def _operation(self, expr: Token, power: Token | None) -> Any:
+        val = np.acosh(getattr(expr, "value", expr))
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class HyperbolicArcTangent(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("tanh", expr, power, inverse=True)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
-        return np.atanh(expr.value) ** (1 if power is None else power.value)
+    def _operation(self, expr: Token, power: Token | None) -> Any:
+        val = np.atanh(getattr(expr, "value", expr))
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class HyperbolicArcCosecant(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("csch", expr, power, inverse=True)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
-        return np.asinh(1 / expr.value) ** (1 if power is None else power.value)
+    def _operation(self, expr: Token, power: Token | None) -> Any:
+        val = np.asinh(1 / getattr(expr, "value", expr))
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class HyperbolicArcSecant(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("sech", expr, power, inverse=True)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
-        return np.acosh(1 / expr.value) ** (1 if power is None else power.value)
+    def _operation(self, expr: Token, power: Token | None) -> Any:
+        val = np.acosh(1 / getattr(expr, "value", expr))
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class HyperbolicArcCotangent(_TrigFunction):
     def __init__(
-        self, expr: Token | str, power: Optional[Token | Any] = None
+        self, expr: TokenLike, power: TokenLike | None = None
     ) -> None:
         super().__init__("coth", expr, power, inverse=True)
 
-    def _operation(self, expr: Token, power: Optional[Token]) -> Any:
-        return np.atanh(1 / expr.value) ** (1 if power is None else power.value)
+    def _operation(self, expr: Token, power: Token | None) -> Any:
+        val = np.atanh(1 / getattr(expr, "value", expr))
+        p = 1 if power is None else getattr(power, "value", power)
+        return val**p
 
 
 class Logarithm(CallableToken):
     def __init__(
-        self, expr: Token | str | float, base: Token | str | float = 10
+        self, expr: TokenLike, base: TokenLike = 10
     ) -> None:
         """A logarithm expression, such as `\\log_{10}(100)`."""
         self.expr = as_token(expr)
         self.base = as_token(base)
 
     def __str__(self) -> str:
-        if self.base.value == 10:
+        base_val = getattr(self.base, "value", None)
+        base_str = str(self.base)
+        if base_val == 10 or base_str == "10":
             return f"\\log\\left({{{self.expr}}}\\right)"
-        elif self.base.value == "e":
+        elif base_val == "e" or base_str == "e":
             return f"\\ln\\left({{{self.expr}}}\\right)"
         return f"\\log_{{{self.base}}}\\left({{{self.expr}}}\\right)"
 
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
-        return as_token(self.value)(*args, **kwargs)
+        val = self.value
+        tok = as_token(val)
+        if isinstance(tok, CallableToken):
+            return tok(*args, **kwargs)
+        return Literal(str(val))
 
     @property
     def value(self) -> float:
-        if self.base.value == "e":
-            return np.log(self.expr.value)
-        if self.base.value == 10:
-            return np.log10(self.expr.value)
-        if self.base.value == 2:
-            return np.log2(self.expr.value)
-        return np.emath.logn(self.base.value, self.expr.value)
+        base_val: Any = getattr(self.base, "value", self.base)
+        expr_val: Any = getattr(self.expr, "value", self.expr)
+        if base_val == "e":
+            return float(np.log(expr_val))
+        if base_val == 10:
+            return float(np.log10(expr_val))
+        if base_val == 2:
+            return float(np.log2(expr_val))
+        return float(np.emath.logn(float(base_val), float(expr_val)))
 
 
 class NaturalLogarithm(Logarithm):
-    def __init__(self, expr: Token | str | float) -> None:
+    def __init__(self, expr: TokenLike) -> None:
         super().__init__(expr, "e")
 
     def __str__(self) -> str:
@@ -436,7 +487,7 @@ class NaturalLogarithm(Logarithm):
 
 class Exponential(CallableToken):
     def __init__(
-        self, expr: Token | str | float, use_exp: Optional[bool] = None
+        self, expr: TokenLike, use_exp: bool | None = None
     ) -> None:
         """An exponential expression, such as `\\exp(a)`."""
         self.expr = as_token(expr)
@@ -453,11 +504,16 @@ class Exponential(CallableToken):
         return str(Power(Macro("mathrm", "e"), self.expr))
 
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
-        return as_token(self.value)(*args, **kwargs)
+        val = self.value
+        tok = as_token(val)
+        if isinstance(tok, CallableToken):
+            return tok(*args, **kwargs)
+        return Literal(str(val))
 
     @property
     def value(self) -> float:
-        return np.exp(float(self.expr))
+        expr_val: Any = getattr(self.expr, "value", self.expr)
+        return float(np.exp(float(expr_val)))
 
 
 class Function(Token):
@@ -466,7 +522,7 @@ class Function(Token):
         name: Token | str,
         *args: Token | str | Any,
         upright_name: bool = False,
-        power: int | Token = None,
+        power: int | Token | None = None,
     ) -> None:
         """A function expression, such as `f(a, b)`."""
         self.name = as_token(name)
@@ -491,13 +547,18 @@ class Function(Token):
 
 class FunctionGenerator(Token):
     def __init__(
-        self, name: str | Token, upright_name: bool = False, power: int | Token = None
+        self,
+        name: str | Token,
+        upright_name: bool = False,
+        power: int | Token | None = None,
     ) -> None:
         self.name = name
         self.upright_name = upright_name
         self.power = None if power is None else as_token(power)
 
-    def __call__(self, *args: Token | str | Any, power: int | Token = None) -> Function:
+    def __call__(
+        self, *args: Token | str | Any, power: int | Token | None = None
+    ) -> Function:
         if power is None:
             power = self.power
         else:
@@ -510,19 +571,24 @@ class FunctionGenerator(Token):
 
 class Operator(Function):
     def __init__(
-        self, name: Token | str, *args: Token | str | Any, power: int | Token = None
+        self,
+        name: Token | str,
+        *args: Token | str | Any,
+        power: int | Token | None = None,
     ) -> None:
         super().__init__(name, *args, upright_name=True, power=power)
 
 
 class OperatorGenerator(Token):
     def __init__(
-        self, name: str | Token, power: int | Token = None
+        self, name: str | Token, power: int | Token | None = None
     ) -> None:
         self.name = name
         self.power = power
 
-    def __call__(self, *args: Token | str | Any, power: int | Token = None) -> Operator:
+    def __call__(
+        self, *args: Token | str | Any, power: int | Token | None = None
+    ) -> Operator:
         if power is None:
             power = self.power
         else:
@@ -536,27 +602,27 @@ class OperatorGenerator(Token):
 
 
 # Standalone function helpers
-def sin(expr: Token | str | float, power: Optional[Token | str | float] = None) -> Sine:
+def sin(expr: Token | str | float, power: Token | str | float | None = None) -> Sine:
     return Sine(expr, power)
 
 
-def cos(expr: Token | str | float, power: Optional[Token | str | float] = None) -> Cosine:
+def cos(expr: Token | str | float, power: Token | str | float | None = None) -> Cosine:
     return Cosine(expr, power)
 
 
-def tan(expr: Token | str | float, power: Optional[Token | str | float] = None) -> Tangent:
+def tan(expr: Token | str | float, power: Token | str | float | None = None) -> Tangent:
     return Tangent(expr, power)
 
 
-def arcsin(expr: Token | str | float, power: Optional[Token | str | float] = None) -> ArcSine:
+def arcsin(expr: Token | str | float, power: Token | str | float | None = None) -> ArcSine:
     return ArcSine(expr, power)
 
 
-def arccos(expr: Token | str | float, power: Optional[Token | str | float] = None) -> ArcCosine:
+def arccos(expr: Token | str | float, power: Token | str | float | None = None) -> ArcCosine:
     return ArcCosine(expr, power)
 
 
-def arctan(expr: Token | str | float, power: Optional[Token | str | float] = None) -> ArcTangent:
+def arctan(expr: Token | str | float, power: Token | str | float | None = None) -> ArcTangent:
     return ArcTangent(expr, power)
 
 
@@ -565,27 +631,27 @@ acos = arccos
 atan = arctan
 
 
-def csc(expr: Token | str | float, power: Optional[Token | str | float] = None) -> Cosecant:
+def csc(expr: Token | str | float, power: Token | str | float | None = None) -> Cosecant:
     return Cosecant(expr, power)
 
 
-def sec(expr: Token | str | float, power: Optional[Token | str | float] = None) -> Secant:
+def sec(expr: Token | str | float, power: Token | str | float | None = None) -> Secant:
     return Secant(expr, power)
 
 
-def cot(expr: Token | str | float, power: Optional[Token | str | float] = None) -> Cotangent:
+def cot(expr: Token | str | float, power: Token | str | float | None = None) -> Cotangent:
     return Cotangent(expr, power)
 
 
-def arccsc(expr: Token | str | float, power: Optional[Token | str | float] = None) -> ArcCosecant:
+def arccsc(expr: Token | str | float, power: Token | str | float | None = None) -> ArcCosecant:
     return ArcCosecant(expr, power)
 
 
-def arcsec(expr: Token | str | float, power: Optional[Token | str | float] = None) -> ArcSecant:
+def arcsec(expr: Token | str | float, power: Token | str | float | None = None) -> ArcSecant:
     return ArcSecant(expr, power)
 
 
-def arccot(expr: Token | str | float, power: Optional[Token | str | float] = None) -> ArcCotangent:
+def arccot(expr: Token | str | float, power: Token | str | float | None = None) -> ArcCotangent:
     return ArcCotangent(expr, power)
 
 
@@ -594,51 +660,51 @@ asec = arcsec
 acot = arccot
 
 
-def sinh(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicSine:
+def sinh(expr: Token | str | float, power: Token | str | float | None = None) -> HyperbolicSine:
     return HyperbolicSine(expr, power)
 
 
-def cosh(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicCosine:
+def cosh(expr: Token | str | float, power: Token | str | float | None = None) -> HyperbolicCosine:
     return HyperbolicCosine(expr, power)
 
 
-def tanh(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicTangent:
+def tanh(expr: Token | str | float, power: Token | str | float | None = None) -> HyperbolicTangent:
     return HyperbolicTangent(expr, power)
 
 
-def csch(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicCosecant:
+def csch(expr: Token | str | float, power: Token | str | float | None = None) -> HyperbolicCosecant:
     return HyperbolicCosecant(expr, power)
 
 
-def sech(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicSecant:
+def sech(expr: Token | str | float, power: Token | str | float | None = None) -> HyperbolicSecant:
     return HyperbolicSecant(expr, power)
 
 
-def coth(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicCotangent:
+def coth(expr: Token | str | float, power: Token | str | float | None = None) -> HyperbolicCotangent:
     return HyperbolicCotangent(expr, power)
 
 
-def arcsinh(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicArcSine:
+def arcsinh(expr: Token | str | float, power: Token | str | float | None = None) -> HyperbolicArcSine:
     return HyperbolicArcSine(expr, power)
 
 
-def arccosh(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicArcCosine:
+def arccosh(expr: Token | str | float, power: Token | str | float | None = None) -> HyperbolicArcCosine:
     return HyperbolicArcCosine(expr, power)
 
 
-def arctanh(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicArcTangent:
+def arctanh(expr: Token | str | float, power: Token | str | float | None = None) -> HyperbolicArcTangent:
     return HyperbolicArcTangent(expr, power)
 
 
-def arccsch(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicArcCosecant:
+def arccsch(expr: Token | str | float, power: Token | str | float | None = None) -> HyperbolicArcCosecant:
     return HyperbolicArcCosecant(expr, power)
 
 
-def arcsech(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicArcSecant:
+def arcsech(expr: Token | str | float, power: Token | str | float | None = None) -> HyperbolicArcSecant:
     return HyperbolicArcSecant(expr, power)
 
 
-def arccoth(expr: Token | str | float, power: Optional[Token | str | float] = None) -> HyperbolicArcCotangent:
+def arccoth(expr: Token | str | float, power: Token | str | float | None = None) -> HyperbolicArcCotangent:
     return HyperbolicArcCotangent(expr, power)
 
 
@@ -658,7 +724,7 @@ def ln(value: Token | str | float) -> NaturalLogarithm:
     return NaturalLogarithm(value)
 
 
-def exp(value: Token | str | float, use_exp: Optional[bool] = None) -> Exponential:
+def exp(value: Token | str | float, use_exp: bool | None = None) -> Exponential:
     return Exponential(value, use_exp)
 
 

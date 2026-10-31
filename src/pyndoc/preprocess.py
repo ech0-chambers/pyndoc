@@ -9,18 +9,14 @@ from __future__ import annotations
 import io
 import re
 import shutil
-import sys
-from dataclasses import dataclass
-from enum import Enum, auto
 from pathlib import Path
-from typing import NoReturn, Optional, Sequence
+from typing import NoReturn
 
-from rich.syntax import Syntax
-from rich.style import Style
+from rich.console import Console, Group
 from rich.panel import Panel
+from rich.style import Style
+from rich.syntax import Syntax
 from rich.text import Text
-from rich.console import Group, Console
-from rich import print as rprint
 
 # ==============================================================================
 # Exceptions & Diagnostic Error Reporting
@@ -204,7 +200,7 @@ def raise_parsing_error(
             contents,
             "markdown",
             line_numbers=True,
-            highlight_lines=[error_line_number],
+            highlight_lines={error_line_number},
             line_range=(start_line_index + 1, min(num_lines, error_line_index + 2) + 1),
             theme="nord",
             word_wrap=True,
@@ -885,24 +881,25 @@ def format_as_markdown(
         else:
             macro = f"print({macro})"
 
-    classes = [".py-md" if is_double else ".py"]
+    classes_list = [".py-md" if is_double else ".py"]
     if is_quiet:
-        classes.append(".quiet")
+        classes_list.append(".quiet")
     if is_inline is not None:
-        classes.append(".inline" if is_inline else ".block")
+        classes_list.append(".inline" if is_inline else ".block")
 
-    classes = " ".join(classes)
+    classes_str = " ".join(classes_list)
 
     if is_solo:
-        return f"\n```{{{classes}}}\n{macro}\n```\n"
+        return f"\n```{{{classes_str}}}\n{macro}\n```\n"
 
-    return f"`` {macro} ``{{{classes}}}"
+    return f"`` {macro} ``{{{classes_str}}}"
 
 
 def format_block_as_markdown(
     block: str,
     is_quiet: bool,
     is_solo: bool = False,
+    is_double: bool = False,
 ) -> str:
     """Format a multi-line Python code block into Pandoc-annotated Markdown.
 
@@ -910,20 +907,21 @@ def format_block_as_markdown(
         block: Multi-line Python code string.
         is_quiet: True if terminated with ';'.
         is_solo: True if solitary on its line.
+        is_double: True if invoked with '%%' (AST object mode).
 
     Returns:
         Pandoc-formatted code block string.
     """
-    classes = [".py"]
+    classes_list = [".py-md" if is_double else ".py"]
 
     if is_quiet:
-        classes.append(".quiet")
+        classes_list.append(".quiet")
 
-    classes = " ".join(classes)
+    classes_str = " ".join(classes_list)
 
     if is_solo:
-        return f"\n```{{{classes}}}\n{block}\n```\n"
-    return f"`` {block} ``{{{classes}}}"
+        return f"\n```{{{classes_str}}}\n{block}\n```\n"
+    return f"`` {block} ``{{{classes_str}}}"
 
 
 # ==============================================================================
@@ -1035,7 +1033,7 @@ def read_pyndoc_block(contents: str, start: int) -> tuple[int, str]:
     cursor = bracket_end + (2 if is_quiet else 1)
     is_solo = is_only_text_on_line(contents, start, cursor)
     return cursor - start, format_block_as_markdown(
-        block, is_quiet=is_quiet, is_solo=is_solo
+        block, is_quiet=is_quiet, is_solo=is_solo, is_double=is_double
     )
 
 
@@ -1167,13 +1165,13 @@ def include_py_file(
             FileNotFoundError,
         )
 
-    classes = [".py-file"]
+    classes_list = [".py-file"]
     if is_quiet:
-        classes.append(".quiet")
+        classes_list.append(".quiet")
 
-    classes = " ".join(classes)
+    classes_str = " ".join(classes_list)
 
-    return f"`` {filepath.absolute()} ``{{{classes}}}"
+    return f"`` {filepath.absolute()} ``{{{classes_str}}}"
 
 
 def include_md_file(

@@ -1,7 +1,8 @@
 """Shorthand assignment DSL parser for mathematical symbols and variables."""
 import re
 import sys
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
+
 from pyndoc.latex.core import Token, as_token
 from pyndoc.latex.quantity import var
 
@@ -16,7 +17,7 @@ VALUE_PATTERN = re.compile(
     re.VERBOSE,
 )
 
-DEFAULT_NAMESPACE: Optional[Dict[str, Any]] = None
+DEFAULT_NAMESPACE: dict[str, Any] | None = None
 
 
 def pythonify_name(name: str) -> str:
@@ -55,9 +56,9 @@ def pythonify_name(name: str) -> str:
 
 def define_symbols(
     statements: str,
-    namespace: Optional[Dict[str, Any]] = None,
+    namespace: dict[str, Any] | None = None,
     allow_redefinition: bool = False,
-) -> Tuple[Token, ...]:
+) -> tuple[Token, ...]:
     """Parse shorthand symbol declaration statements into Variable or Token objects.
 
     Parameters
@@ -65,7 +66,7 @@ def define_symbols(
     statements : str
         Newline- or semicolon-delimited variable declarations, e.g.:
         "a = 5 m; b = 10 s; \\alpha_{i} = 4 (.2f); p_i;"
-    namespace : Optional[Dict[str, Any]]
+    namespace : Dict[str, Any] | None
         Target dictionary to populate with the parsed variables. If None,
         resolves dynamically to pyndoc.latex.DEFAULT_NAMESPACE.
     allow_redefinition : bool, default False
@@ -128,9 +129,8 @@ def define_symbols(
             units = match.group("units")
             fmt = match.group("fmt")
 
-            val_num: int | float = float(val_str)
-            if val_num.is_integer():
-                val_num = int(val_num)
+            val_float = float(val_str)
+            val_num: int | float = int(val_float) if val_float.is_integer() else val_float
 
             clean_units = units.strip() if units else None
             clean_fmt = fmt.strip() if fmt else None

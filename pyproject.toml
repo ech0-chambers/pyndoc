@@ -4,17 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyndoc"
-version = "0.1.6"
+version = "0.2.0"
 authors = [
     {name = "Peter Brookes Chambers"}
 ]
-description = "A standalone Pandoc filter and optional preprocessor to include arbitrary Python code in Markdown documents, ran at build time."
+description = "A standalone Pandoc filter and optional preprocessor to include arbitrary Python code in Markdown documents, run at build time."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: GNU Affero General Public License v3",
     "Operating System :: OS Independent",
+    "Typing :: Typed",
 ]
 
 dependencies = [
@@ -25,15 +30,51 @@ dependencies = [
     "rich",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "mypy>=1.10",
+    "ruff>=0.5",
+    "types-PyYAML",
+]
+
 [project.urls]
 Homepage = "https://github.com/ech0-chambers/pyndoc"
+Repository = "https://github.com/ech0-chambers/pyndoc"
 
 [project.scripts]
 pyndoc = "pyndoc.__main__:main"
 
-[tool.setuptools]
-packages = ["pyndoc", "pyndoc.latex"]
-package-dir = {"" = "src"}
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.setuptools.package-data]
-pyndoc = ["filter.py"]
+pyndoc = ["filter.py", "py.typed"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["panflute.*", "yaml.*", "pint.*", "rich.*"]
+ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/pyndoc/latex/__init__.py" = ["F403", "F405"]
+"src/pyndoc/markdown/__init__.py" = ["F403", "F405"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --import-mode=importlib"

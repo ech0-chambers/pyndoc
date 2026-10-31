@@ -7,15 +7,9 @@ DefinitionList. It supports clean recursive tree hierarchies.
 from __future__ import annotations
 
 import logging
-from enum import Enum
-from typing import Any, Iterable, Mapping
-
-try:
-    from enum import StrEnum
-except ImportError:
-
-    class StrEnum(str, Enum):
-        pass
+from collections.abc import Iterable, Mapping
+from enum import StrEnum
+from typing import Any
 
 import panflute as pf
 

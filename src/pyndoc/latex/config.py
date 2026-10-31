@@ -1,8 +1,9 @@
 """Configuration options and context managers for LaTeX rendering."""
 
-from dataclasses import dataclass
 import contextlib
-from typing import Generator, Any, Dict
+from collections.abc import Generator
+from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass

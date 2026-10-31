@@ -1,8 +1,8 @@
 """Typographical accents, diacritics, font styling, and multi-line layout formatting."""
 
 import re
-from typing import List, Tuple
-from .core import Token, Macro, as_token
+
+from .core import Macro, Token, as_token
 
 
 def sanitise_latex_text(text_val: str) -> str:
@@ -133,32 +133,33 @@ def widetilde(expr: Token | str | float) -> Macro:
 
 
 def split(
-    lines: List[str | Token | Tuple[str | Token, ...]],
+    lines: list[str | Token | tuple[str | Token, ...]],
     environment: str = "split",
     separator: str | None = "=",
 ) -> str:
     """Format multiple lines inside a LaTeX split-like environment."""
     if not isinstance(lines, (list, tuple)):
         lines = [lines]
-    lines_list = list(lines)
-    for i, line in enumerate(lines_list):
+    formatted_lines: list[str] = []
+    for line in lines:
         if isinstance(line, (list, tuple)):
             if len(line) == 1:
-                lines_list[i] = f"& {separator if separator is not None else '='} {line[0]}"
+                formatted_lines.append(f"& {separator if separator is not None else '='} {line[0]}")
             else:
                 if separator is None:
-                    lines_list[i] = " & ".join(str(expr) for expr in line)
+                    formatted_lines.append(" & ".join(str(expr) for expr in line))
                 elif len(line) == 2:
-                    lines_list[i] = f"{line[0]} & {separator} {line[1]}"
+                    formatted_lines.append(f"{line[0]} & {separator} {line[1]}")
                 else:
-                    lines_list[i] = f"{line[0]} & {separator} {line[1]} & " + " & ".join(
-                        str(expr) for expr in line[2:]
+                    formatted_lines.append(
+                        f"{line[0]} & {separator} {line[1]} & "
+                        + " & ".join(str(expr) for expr in line[2:])
                     )
         else:
-            lines_list[i] = str(line)
+            formatted_lines.append(str(line))
     return (
         f"\\begin{{{environment}}}\n\t"
-        + "\\\\\n\t".join(lines_list)
+        + "\\\\\n\t".join(formatted_lines)
         + f"\n\\end{{{environment}}}"
     )
 

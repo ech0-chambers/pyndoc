@@ -1,17 +1,19 @@
 """Core AST grammar, base tokens, operators, and coercion registry."""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple, Dict, Any, Callable, Set
+from collections.abc import Callable
+from typing import Any, TypeAlias, Union
+
 import pint
+
 from .config import ACTIVE_CONFIG
 
-
-_TOKEN_CONVERTERS: List[Tuple[type | Tuple[type, ...], Callable[[Any], "Token"]]] = []
-_UNIT_PARSER: Optional[Callable[[Any], pint.Unit]] = None
+_TOKEN_CONVERTERS: list[tuple[type | tuple[type, ...], Callable[[Any], "Token"]]] = []
+_UNIT_PARSER: Callable[[Any], pint.Unit] | None = None
 
 
 def register_token_converter(
-    types: type | Tuple[type, ...], converter: Callable[[Any], "Token"]
+    types: type | tuple[type, ...], converter: Callable[[Any], "Token"]
 ) -> None:
     """Register a converter function to coerce external types into Token instances.
 
@@ -31,6 +33,25 @@ def set_unit_parser(parser: Callable[[Any], pint.Unit]) -> None:
     _UNIT_PARSER = parser
 
 
+TokenLike: TypeAlias = Union["Token", str, float, int]
+
+
+def _get_evaluable_operand_value(operand: Any) -> Any:
+    """Extract a numeric or Quantity value from an operand if evaluable, else return None."""
+    val = getattr(operand, "value", operand)
+    if val is None or isinstance(val, Token):
+        return None
+    if isinstance(val, (int, float, complex, pint.Quantity)):
+        return val
+    if isinstance(val, str):
+        try:
+            f = float(val)
+            return int(f) if f.is_integer() else f
+        except ValueError:
+            return None
+    return None
+
+
 def _parse_unit(unit: Any) -> pint.Unit:
     """Parse a unit using the registered unit parser if available."""
     if isinstance(unit, pint.Unit):
@@ -47,55 +68,55 @@ class Token(ABC):
     def __str__(self) -> str:
         pass
 
-    def __add__(self, other: "Token") -> "Addition":
+    def __add__(self, other: Any) -> "Addition":
         return Addition(self, other)
 
-    def __radd__(self, other: "Token") -> "Addition":
+    def __radd__(self, other: Any) -> "Addition":
         return Addition(other, self)
 
-    def __sub__(self, other: "Token") -> "Subtraction":
+    def __sub__(self, other: Any) -> "Subtraction":
         return Subtraction(self, other)
 
-    def __rsub__(self, other: "Token") -> "Subtraction":
+    def __rsub__(self, other: Any) -> "Subtraction":
         return Subtraction(other, self)
 
-    def __mul__(self, other: "Token") -> "Multiplication":
+    def __mul__(self, other: Any) -> "Multiplication":
         return Multiplication(self, other)
 
-    def __rmul__(self, other: "Token") -> "Multiplication":
+    def __rmul__(self, other: Any) -> "Multiplication":
         return Multiplication(other, self)
 
-    def __matmul__(self, other: "Token") -> "Times":
+    def __matmul__(self, other: Any) -> "Times":
         return Times(self, other)
 
-    def __rmatmul__(self, other: "Token") -> "Times":
+    def __rmatmul__(self, other: Any) -> "Times":
         return Times(other, self)
 
-    def __div__(self, other: "Token") -> "Division":
+    def __div__(self, other: Any) -> "Division":
         return Division(self, other)
 
-    def __rdiv__(self, other: "Token") -> "Division":
+    def __rdiv__(self, other: Any) -> "Division":
         return Division(other, self)
 
-    def __truediv__(self, other: "Token") -> "Division":
+    def __truediv__(self, other: Any) -> "Division":
         return Division(self, other)
 
-    def __rtruediv__(self, other: "Token") -> "Division":
+    def __rtruediv__(self, other: Any) -> "Division":
         return Division(other, self)
 
-    def __pow__(self, other: "Token") -> "Power":
+    def __pow__(self, other: Any) -> "Power":
         return Power(self, other)
 
-    def __rpow__(self, other: "Token") -> "Power":
+    def __rpow__(self, other: Any) -> "Power":
         return Power(other, self)
 
-    def __getitem__(self, other: "Token") -> "Index":
+    def __getitem__(self, other: Any) -> Any:
         return Index(self, other)
 
-    def __and__(self, other: "Token") -> "Concatenation":
+    def __and__(self, other: Any) -> "Concatenation":
         return Concatenation(self, other)
 
-    def __rand__(self, other: "Token") -> "Concatenation":
+    def __rand__(self, other: Any) -> "Concatenation":
         return Concatenation(other, self)
 
     def __neg__(self) -> "Negation":
@@ -107,7 +128,9 @@ class Token(ABC):
     def __hash__(self) -> int:
         return hash(str(self))
 
-    def __eq__(self, other: Any) -> "Equality":
+    def __eq__(self, other: Any) -> Any:
+        if other is None:
+            return False
         return Equality(self, other)
 
     def __lt__(self, other: Any) -> "LessThan":
@@ -122,7 +145,9 @@ class Token(ABC):
     def __ge__(self, other: Any) -> "GreaterThanOrEqual":
         return GreaterThanOrEqual(self, other)
 
-    def __ne__(self, other: Any) -> "NotEqual":
+    def __ne__(self, other: Any) -> Any:
+        if other is None:
+            return True
         return NotEqual(self, other)
 
     def __abs__(self) -> "Token":
@@ -168,7 +193,23 @@ class DimensionedLiteral(Literal):
         super().__init__(value)
 
 
+class BooleanLiteral(Literal):
+    """Boolean literal representation, rendering as `\\mathrm{True}` or `\\mathrm{False}`."""
+
+    def __init__(self, value: bool) -> None:
+        super().__init__(str(value))
+        self.value: bool = bool(value)
+
+    def __str__(self) -> str:
+        return f"\\mathrm{{{self.value}}}"
+
+    def __bool__(self) -> bool:
+        return self.value
+
+
 class CallableToken(Token, ABC):
+    value: Any
+
     @abstractmethod
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
         pass
@@ -193,7 +234,7 @@ class CallableToken(Token, ABC):
 class Argument:
     def __init__(
         self,
-        arg: str | Token | Dict[str, Any],
+        arg: TokenLike | dict[str, Any],
         is_optional: bool = False,
         in_expl3: bool = False,
     ):
@@ -201,7 +242,7 @@ class Argument:
 
         Parameters
         ----------
-        arg : str | Token | Dict[str, Any]
+        arg : TokenLike | Dict[str, Any]
             The argument to the macro or environment. This can be a dictionary of key-value pairs,
             in which case they will be formatted as key=value.
         is_optional : bool, optional
@@ -219,25 +260,25 @@ class Argument:
 
         if isinstance(self.arg, dict):
             if self.in_expl3:
-                arg = {
+                dict_arg = {
                     key.replace(" ", "~"): value.replace(" ", "~")
                     for key, value in self.arg.items()
                 }
             else:
-                arg = self.arg
-            return f"{open_delim}{', '.join([f'{key}={value}' for key, value in arg.items()])}{close_delim}"
+                dict_arg = self.arg
+            return f"{open_delim}{', '.join([f'{key}={value}' for key, value in dict_arg.items()])}{close_delim}"
 
-        arg = str(self.arg)
+        str_arg = str(self.arg)
         if self.in_expl3:
-            arg = arg.replace(" ", "~")
-        return f"{open_delim}{arg}{close_delim}"
+            str_arg = str_arg.replace(" ", "~")
+        return f"{open_delim}{str_arg}{close_delim}"
 
 
 class Macro(Token):
     def __init__(
         self,
         name: str,
-        *arguments: str | Tuple[str, bool] | Argument,
+        *arguments: TokenLike | tuple[TokenLike, bool] | dict[str, Any] | Argument,
         in_expl3: bool = False,
     ):
         r"""A LaTeX macro, optionally with arguments.
@@ -246,7 +287,7 @@ class Macro(Token):
         ----------
         name : str
             The name of the macro. For example, `Macro("LaTeX")` renders as `\LaTeX`.
-        arguments : Tuple[Argument]
+        arguments : TokenLike | Tuple[TokenLike, bool] | Dict[str, Any] | Argument
             Arguments for the macro.
         in_expl3 : bool, optional
             If True, spaces in arguments will be replaced with `~`.
@@ -275,8 +316,8 @@ class Environment(Token):
     def __init__(
         self,
         name: str,
-        *arguments: str | Tuple[str, bool] | Argument,
-        content: str | Token | List[Token] = None,
+        *arguments: TokenLike | tuple[TokenLike, bool] | dict[str, Any] | Argument,
+        content: str | Token | list[Token] | None = None,
         in_expl3: bool = False,
     ):
         r"""A LaTeX environment, optionally with arguments.
@@ -323,6 +364,8 @@ def as_token(value: Any) -> Token:
     """
     if isinstance(value, Token):
         return value
+    if isinstance(value, bool):
+        return BooleanLiteral(value)
     if isinstance(value, str):
         if value.isnumeric():
             val = float(value)
@@ -347,10 +390,10 @@ class _UnaryOperator(CallableToken, ABC):
     precedence: int = 30
     bracket_right: bool = True
 
-    def __init__(self, value: CallableToken | str | float) -> None:
+    def __init__(self, value: TokenLike) -> None:
         self.right = as_token(value)
         self.symbol = ""
-        self._unit: Optional[pint.Unit] = None
+        self._unit: pint.Unit | None = None
 
     def _should_group_operand(self, operand: Token) -> bool:
         operand_precedence = getattr(operand, "precedence", 100)
@@ -368,21 +411,34 @@ class _UnaryOperator(CallableToken, ABC):
 
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
         value = self.value
-        return as_token(value)(*args, **kwargs)
+        if value is None:
+            raise ValueError(
+                f"Cannot numerically evaluate expression '{self}' because operand does not have a numeric value."
+            )
+        tok = as_token(value)
+        if isinstance(tok, CallableToken):
+            return tok(*args, **kwargs)
+        return Literal(str(value))
 
     @abstractmethod
-    def _operation(self, value: CallableToken) -> Any:
+    def _operation(self, value: Any) -> Any:
         pass
 
     @property
     def value(self) -> Any:
-        val = self._operation(self.right)
-        if self._unit is not None and isinstance(val, pint.Quantity):
-            val = val.to(self._unit)
-        return val
+        rv = _get_evaluable_operand_value(self.right)
+        if rv is None:
+            return None
+        try:
+            val = self._operation(rv)
+            if self._unit is not None and isinstance(val, pint.Quantity):
+                val = val.to(self._unit)
+            return val
+        except (TypeError, ValueError):
+            return None
 
     @property
-    def unit(self) -> Optional[pint.Unit]:
+    def unit(self) -> pint.Unit | None:
         if self._unit is not None:
             return self._unit
         val = self.value
@@ -404,25 +460,25 @@ class _UnaryOperator(CallableToken, ABC):
 class Negation(_UnaryOperator):
     precedence = 30
 
-    def __init__(self, value: CallableToken | str | float) -> None:
+    def __init__(self, value: TokenLike) -> None:
         """Negates a value, such as `-a`."""
         super().__init__(value)
         self.symbol = "-"
 
-    def _operation(self, value: CallableToken) -> Any:
-        return -value.value
+    def _operation(self, value: Any) -> Any:
+        return -value
 
 
 class Positive(_UnaryOperator):
     precedence = 30
 
-    def __init__(self, value: CallableToken | str | float) -> None:
+    def __init__(self, value: TokenLike) -> None:
         """Returns the positive value of a quantity, such as `+a`."""
         super().__init__(value)
         self.symbol = "+"
 
-    def _operation(self, value: CallableToken) -> Any:
-        return value.value
+    def _operation(self, value: Any) -> Any:
+        return value
 
 
 class _BinaryOperator(CallableToken, ABC):
@@ -433,13 +489,13 @@ class _BinaryOperator(CallableToken, ABC):
 
     def __init__(
         self,
-        left: CallableToken | str | float,
-        right: CallableToken | str | float,
+        left: TokenLike,
+        right: TokenLike,
     ) -> None:
         self.left = as_token(left)
         self.right = as_token(right)
         self.symbol = ""
-        self._unit: Optional[pint.Unit] = None
+        self._unit: pint.Unit | None = None
 
     def _should_group_operand(self, operand: Token, is_right: bool = False) -> bool:
         operand_precedence = getattr(operand, "precedence", 100)
@@ -466,21 +522,35 @@ class _BinaryOperator(CallableToken, ABC):
 
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
         value = self.value
-        return as_token(value)(*args, **kwargs)
+        if value is None:
+            raise ValueError(
+                f"Cannot numerically evaluate expression '{self}' because one or more operands do not have a numeric value."
+            )
+        tok = as_token(value)
+        if isinstance(tok, CallableToken):
+            return tok(*args, **kwargs)
+        return Literal(str(value))
 
     @abstractmethod
-    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
+    def _operation(self, left: Any, right: Any) -> Any:
         pass
 
     @property
     def value(self) -> Any:
-        val = self._operation(self.left, self.right)
-        if self._unit is not None and isinstance(val, pint.Quantity):
-            val = val.to(self._unit)
-        return val
+        lv = _get_evaluable_operand_value(self.left)
+        rv = _get_evaluable_operand_value(self.right)
+        if lv is None or rv is None:
+            return None
+        try:
+            val = self._operation(lv, rv)
+            if self._unit is not None and isinstance(val, pint.Quantity):
+                val = val.to(self._unit)
+            return val
+        except (TypeError, ValueError, ZeroDivisionError):
+            return None
 
     @property
-    def unit(self) -> Optional[pint.Unit]:
+    def unit(self) -> pint.Unit | None:
         if self._unit is not None:
             return self._unit
         val = self.value
@@ -506,14 +576,14 @@ class Addition(_BinaryOperator):
     bracket_right = True
 
     def __init__(
-        self, left: CallableToken | str | float, right: CallableToken | str | float
+        self, left: TokenLike, right: TokenLike
     ) -> None:
         """Adds two values together, such as `a + b`."""
         super().__init__(left, right)
         self.symbol = "+"
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
-        return left.value + right.value
+    def _operation(self, left: Any, right: Any) -> Any:
+        return left + right
 
 
 class Subtraction(_BinaryOperator):
@@ -523,14 +593,14 @@ class Subtraction(_BinaryOperator):
     bracket_right = True
 
     def __init__(
-        self, left: CallableToken | str | float, right: CallableToken | str | float
+        self, left: TokenLike, right: TokenLike
     ) -> None:
         """Subtracts one value from another, such as `a - b`."""
         super().__init__(left, right)
         self.symbol = "-"
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
-        return left.value - right.value
+    def _operation(self, left: Any, right: Any) -> Any:
+        return left - right
 
 
 class Multiplication(_BinaryOperator):
@@ -540,14 +610,14 @@ class Multiplication(_BinaryOperator):
     bracket_right = True
 
     def __init__(
-        self, left: CallableToken | str | float, right: CallableToken | str | float
+        self, left: TokenLike, right: TokenLike
     ) -> None:
         """Multiplies two values together, such as `a * b`. This is rendered as `ab`."""
         super().__init__(left, right)
         self.symbol = ""
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
-        return left.value * right.value
+    def _operation(self, left: Any, right: Any) -> Any:
+        return left * right
 
 
 class Times(_BinaryOperator):
@@ -557,13 +627,13 @@ class Times(_BinaryOperator):
     bracket_right = True
 
     def __init__(
-        self, left: CallableToken | str | float, right: CallableToken | str | float
+        self, left: TokenLike, right: TokenLike
     ) -> None:
         r"""Multiplies two values together, such as `a * b`.
         Rendered as `a \times b` (or configured multiplication_operator).
         """
         super().__init__(left, right)
-        self._custom_symbol: Optional[str] = None
+        self._custom_symbol: str | None = None
 
     @property
     def symbol(self) -> str:
@@ -572,11 +642,11 @@ class Times(_BinaryOperator):
         return ACTIVE_CONFIG.multiplication_operator
 
     @symbol.setter
-    def symbol(self, value: Optional[str]) -> None:
+    def symbol(self, value: str | None) -> None:
         self._custom_symbol = value
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
-        return left.value * right.value
+    def _operation(self, left: Any, right: Any) -> Any:
+        return left * right
 
 
 class Division(_BinaryOperator):
@@ -586,8 +656,8 @@ class Division(_BinaryOperator):
 
     def __init__(
         self,
-        left: CallableToken | str | float,
-        right: CallableToken | str | float,
+        left: TokenLike,
+        right: TokenLike,
         display_mode: bool = False,
     ) -> None:
         r"""Divides one value by another, rendered as `\frac{a}{b}` or `\dfrac{a}{b}`."""
@@ -600,8 +670,8 @@ class Division(_BinaryOperator):
     def _should_group_operand(self, operand: Token, is_right: bool = False) -> bool:
         return True
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
-        return left.value / right.value
+    def _operation(self, left: Any, right: Any) -> Any:
+        return left / right
 
     def __str__(self) -> str:
         left = self.format_operand(self.left, is_right=False)
@@ -617,8 +687,8 @@ class Power(_BinaryOperator):
 
     def __init__(
         self,
-        left: CallableToken | str | float,
-        right: CallableToken | str | float,
+        left: TokenLike,
+        right: TokenLike,
     ) -> None:
         """Raises one value to the power of another, such as `a ** b`."""
         super().__init__(left, right)
@@ -631,8 +701,8 @@ class Power(_BinaryOperator):
             return True
         return super()._should_group_operand(operand, is_right=False)
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> Any:
-        return left.value**right.value
+    def _operation(self, left: Any, right: Any) -> Any:
+        return left**right
 
     def __str__(self) -> str:
         left = self.format_operand(self.left, is_right=False)
@@ -647,8 +717,8 @@ class Index(_BinaryOperator):
 
     def __init__(
         self,
-        left: CallableToken | str | float,
-        right: CallableToken | str | float,
+        left: TokenLike,
+        right: TokenLike,
     ) -> None:
         """Indexes one value with another, such as `a_i`."""
         super().__init__(left, right)
@@ -659,7 +729,7 @@ class Index(_BinaryOperator):
             return True
         return super()._should_group_operand(operand, is_right=False)
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> None:
+    def _operation(self, left: Any, right: Any) -> None:
         pass
 
     def __str__(self) -> str:
@@ -669,9 +739,9 @@ class Index(_BinaryOperator):
 
 
 class Concatenation(Token):
-    def __init__(self, *args: CallableToken) -> None:
+    def __init__(self, *args: TokenLike) -> None:
         """Concatenates a number of values together, such as `Concatenation(a, b, c)` --> `abc`."""
-        self.args = args
+        self.args = tuple(as_token(arg) for arg in args)
 
     def __str__(self) -> str:
         return " ".join(str(arg) for arg in self.args)
@@ -687,105 +757,182 @@ class _BooleanBinaryOperator(_BinaryOperator):
         value = self._operation(self.left, self.right)
         return Literal(str(value))
 
+    def __bool__(self) -> bool:
+        # 1. If comparing against None, Equality is False and NotEqual is True
+        if self.left is None or self.right is None:
+            if isinstance(self, Equality):
+                return False
+            if isinstance(self, NotEqual):
+                return True
+
+        # 2. If both operands have evaluable values, evaluate via _operation
+        try:
+            left_val = getattr(self.left, "value", None)
+            right_val = getattr(self.right, "value", None)
+            if left_val is not None and right_val is not None:
+                return bool(self._operation(self.left, self.right))
+        except Exception:
+            pass
+
+        # 3. Structural identity shortcuts for Equality and NotEqual
+        if isinstance(self, Equality):
+            if str(self.left) == str(self.right):
+                return True
+            if isinstance(self.left, Literal) and isinstance(self.right, Literal):
+                return False
+        elif isinstance(self, NotEqual):
+            if str(self.left) == str(self.right):
+                return False
+            if isinstance(self.left, Literal) and isinstance(self.right, Literal):
+                return True
+
+        # 4. Otherwise, cannot determine boolean truth value of symbolic relation
+        raise TypeError(
+            f"Cannot determine truth value of symbolic LaTeX relation '{self}'. "
+            "Use expr.value to compare evaluated values, or str(expr) to compare representations."
+        )
+
+    @staticmethod
+    def _coerce_operands_for_comparison(left_val: Any, right_val: Any) -> tuple[Any, Any]:
+        if isinstance(left_val, (int, float)) and isinstance(right_val, str):
+            try:
+                converted = float(right_val)
+                if isinstance(left_val, int) and converted.is_integer():
+                    return left_val, int(converted)
+                return left_val, converted
+            except (ValueError, TypeError):
+                pass
+        elif isinstance(right_val, (int, float)) and isinstance(left_val, str):
+            try:
+                converted = float(left_val)
+                if isinstance(right_val, int) and converted.is_integer():
+                    return int(converted), right_val
+                return converted, right_val
+            except (ValueError, TypeError):
+                pass
+        return left_val, right_val
+
     @abstractmethod
-    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
+    def _operation(self, left: Any, right: Any) -> bool:
         pass
 
 
 class Equality(_BooleanBinaryOperator):
     def __init__(
-        self, left: CallableToken | str | float, right: CallableToken | str | float
+        self, left: TokenLike, right: TokenLike
     ) -> None:
         """Equality between two expressions, such as `a = b`."""
         super().__init__(left, right)
         self.symbol = "="
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
-        return left.value == right.value
+    def _operation(self, left: Any, right: Any) -> bool:
+        lv = getattr(left, "value", left)
+        rv = getattr(right, "value", right)
+        lv_coerced, rv_coerced = self._coerce_operands_for_comparison(lv, rv)
+        return lv_coerced == rv_coerced
 
 
 class LessThan(_BooleanBinaryOperator):
     def __init__(
-        self, left: CallableToken | str | float, right: CallableToken | str | float
+        self, left: TokenLike, right: TokenLike
     ) -> None:
         """Inequality between two expressions, such as `a < b`."""
         super().__init__(left, right)
         self.symbol = "<"
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
-        return left.value < right.value
+    def _operation(self, left: Any, right: Any) -> bool:
+        lv = getattr(left, "value", left)
+        rv = getattr(right, "value", right)
+        lv_coerced, rv_coerced = self._coerce_operands_for_comparison(lv, rv)
+        return lv_coerced < rv_coerced
 
 
 class GreaterThan(_BooleanBinaryOperator):
     def __init__(
-        self, left: CallableToken | str | float, right: CallableToken | str | float
+        self, left: TokenLike, right: TokenLike
     ) -> None:
         """Inequality between two expressions, such as `a > b`."""
         super().__init__(left, right)
         self.symbol = ">"
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
-        return left.value > right.value
+    def _operation(self, left: Any, right: Any) -> bool:
+        lv = getattr(left, "value", left)
+        rv = getattr(right, "value", right)
+        lv_coerced, rv_coerced = self._coerce_operands_for_comparison(lv, rv)
+        return lv_coerced > rv_coerced
 
 
 class LessThanOrEqual(_BooleanBinaryOperator):
     def __init__(
-        self, left: CallableToken | str | float, right: CallableToken | str | float
+        self, left: TokenLike, right: TokenLike
     ) -> None:
         r"""Inequality between two expressions, such as `a <= b` (\leq)."""
         super().__init__(left, right)
         self.symbol = "\\leq"
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
-        return left.value <= right.value
+    def _operation(self, left: Any, right: Any) -> bool:
+        lv = getattr(left, "value", left)
+        rv = getattr(right, "value", right)
+        lv_coerced, rv_coerced = self._coerce_operands_for_comparison(lv, rv)
+        return lv_coerced <= rv_coerced
 
 
 class GreaterThanOrEqual(_BooleanBinaryOperator):
     def __init__(
-        self, left: CallableToken | str | float, right: CallableToken | str | float
+        self, left: TokenLike, right: TokenLike
     ) -> None:
         r"""Inequality between two expressions, such as `a >= b` (\geq)."""
         super().__init__(left, right)
         self.symbol = "\\geq"
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
-        return left.value >= right.value
+    def _operation(self, left: Any, right: Any) -> bool:
+        lv = getattr(left, "value", left)
+        rv = getattr(right, "value", right)
+        lv_coerced, rv_coerced = self._coerce_operands_for_comparison(lv, rv)
+        return lv_coerced >= rv_coerced
 
 
 class NotEqual(_BooleanBinaryOperator):
     def __init__(
-        self, left: CallableToken | str | float, right: CallableToken | str | float
+        self, left: TokenLike, right: TokenLike
     ) -> None:
         r"""Inequality between two expressions, such as `a != b` (\neq)."""
         super().__init__(left, right)
         self.symbol = "\\neq"
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
-        return left.value != right.value
+    def _operation(self, left: Any, right: Any) -> bool:
+        lv = getattr(left, "value", left)
+        rv = getattr(right, "value", right)
+        lv_coerced, rv_coerced = self._coerce_operands_for_comparison(lv, rv)
+        return lv_coerced != rv_coerced
 
 
 class Approximation(_BooleanBinaryOperator):
     def __init__(
-        self, left: CallableToken | str | float, right: CallableToken | str | float
+        self, left: TokenLike, right: TokenLike
     ) -> None:
         r"""Approximate equality between two expressions, such as `a \approx b`."""
         super().__init__(left, right)
         self.symbol = "\\approx"
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
-        return left.value == right.value
+    def _operation(self, left: Any, right: Any) -> bool:
+        lv = getattr(left, "value", left)
+        rv = getattr(right, "value", right)
+        return lv == rv
 
 
 class Equivalence(_BooleanBinaryOperator):
     def __init__(
-        self, left: CallableToken | str | float, right: CallableToken | str | float
+        self, left: TokenLike, right: TokenLike
     ) -> None:
         r"""Logical equivalence between two expressions, such as `a \equiv b`."""
         super().__init__(left, right)
         self.symbol = "\\equiv"
 
-    def _operation(self, left: CallableToken, right: CallableToken) -> bool:
-        return left.value == right.value
+    def _operation(self, left: Any, right: Any) -> bool:
+        lv = getattr(left, "value", left)
+        rv = getattr(right, "value", right)
+        return lv == rv
 
 
 def approx(left: Any, right: Any) -> Approximation:
@@ -803,6 +950,7 @@ __all__ = [
     "CallableToken",
     "Literal",
     "DimensionedLiteral",
+    "BooleanLiteral",
     "Argument",
     "Macro",
     "Environment",

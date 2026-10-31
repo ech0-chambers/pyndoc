@@ -1,5 +1,6 @@
 from enum import StrEnum, auto
 
+
 class Format(StrEnum):
     ASCIIDOC = auto()
     ASCIIDOC_LEGACY = auto()

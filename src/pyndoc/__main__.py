@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import argparse
 import logging
-from pathlib import Path
 import subprocess
 import sys
-from typing import Sequence
+from collections.abc import Sequence
+from pathlib import Path
 
 import yaml
 

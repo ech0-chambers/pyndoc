@@ -588,6 +588,22 @@ x = 100
         assert "`` print((a + b)) ``{.py}." in result
         assert "```{.py}\nx = 100\n```" in result
 
+    def test_preprocess_double_block_emits_py_md(self):
+        # Solitary block with '%%{' should emit .py-md
+        doc_solo = "%%{\nimport pyndoc.markdown as md\ntable = md.table([['a', 'b']])\n}"
+        result_solo = preprocess(doc_solo, "html")
+        assert "```{.py-md}" in result_solo
+
+        # Inline block with '%%{' should emit .py-md
+        doc_inline = "Before %%{x = 1} After"
+        result_inline = preprocess(doc_inline, "html")
+        assert "`` x = 1 ``{.py-md}" in result_inline
+
+        # Quiet double block with semicolon
+        doc_quiet = "%%{\nx = 2\n};"
+        result_quiet = preprocess(doc_quiet, "html")
+        assert "```{.py-md .quiet}" in result_quiet
+
     def test_preprocess_math_example_integration(self):
         math_file = Path("docs/examples/math_example.md")
         if math_file.exists():

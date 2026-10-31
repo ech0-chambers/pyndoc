@@ -3,7 +3,6 @@
 from .core import Literal, Macro
 from .quantity import Variable
 
-
 # Greek Letters
 alpha = Macro("alpha")
 beta = Macro("beta")

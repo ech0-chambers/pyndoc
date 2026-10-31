@@ -1,11 +1,12 @@
 """Unit registry, parsing, and formatting with Pint integration."""
 
 import re
-from typing import Optional, Tuple
-import pint
-from .config import ACTIVE_CONFIG
-from .core import as_token, Literal, set_unit_parser
+from typing import Any
 
+import pint
+
+from .config import ACTIVE_CONFIG
+from .core import Literal, as_token, set_unit_parser
 
 ureg = pint.UnitRegistry()
 ureg.define("electronvolt = 1.602176634e-19 * joules = eV")
@@ -29,7 +30,7 @@ __default_preferred_units = [
     ureg.newton,
 ]
 
-ureg.default_preferred_units = __default_preferred_units
+setattr(ureg, "default_preferred_units", __default_preferred_units)
 
 
 @pint.register_unit_format("U")
@@ -96,7 +97,7 @@ def parse_unit(unit: pint.Unit | str) -> pint.Unit:
         unit = unit.replace("\\", " ")
         if unit.startswith("per "):
             unit = unit[4:]
-            return 1 / ureg.parse_units(unit)
+            return ureg.parse_units(f"1 / ({unit})")
         return ureg.parse_units(unit)
     return ureg.parse_units(unit)
 
@@ -111,11 +112,13 @@ def __truncate_zeros(value: str) -> str:
             ACTIVE_CONFIG.auto_truncate_length >= 0
             and len(decimal) > ACTIVE_CONFIG.auto_truncate_length
         ):
-            decimal = int(decimal[: ACTIVE_CONFIG.auto_truncate_length + 1])
-            decimal = round(decimal, -1)
-            if len(str(decimal)) > ACTIVE_CONFIG.auto_truncate_length:
+            dec_int = int(decimal[: ACTIVE_CONFIG.auto_truncate_length + 1])
+            dec_int = round(dec_int, -1)
+            if len(str(dec_int)) > ACTIVE_CONFIG.auto_truncate_length:
                 integer = str(int(integer) + 1)
                 decimal = ""
+            else:
+                decimal = str(dec_int)
         decimal = decimal.rstrip("0")
         if decimal:
             return f"{integer}.{decimal}"
@@ -141,10 +144,12 @@ def format_unit(unit: pint.Unit, si: bool = False) -> str:
 
 def format_value(
     value: float | pint.Quantity,
-    fmt: Optional[str] = None,
-    unit: Optional[pint.Unit | str] = None,
-) -> Tuple[str, bool]:
+    fmt: str | None = None,
+    unit: pint.Unit | str | None = None,
+) -> tuple[str, bool]:
     r"""Formats a value with an optional unit."""
+    val_num: Any
+    unit_val: pint.Unit | None
     if isinstance(value, pint.Quantity):
         if unit is not None and unit != value.units and unit != "":
             if value.dimensionless and not value.units == ureg.percent:
@@ -155,23 +160,34 @@ def format_value(
                 except pint.DimensionalityError:
                     raise ValueError(f"Cannot convert {value.units} to {unit}")
         if unit == "":
-            value, unit = value.magnitude, None
+            val_num = value.magnitude
+            unit_val = None
         else:
-            value, unit = value.magnitude, value.units
+            val_num = value.magnitude
+            unit_val = value.units
+    else:
+        val_num = value
+        unit_val = None
+
     if isinstance(unit, str):
         if unit == "":
-            unit = None
+            unit_val = None
         else:
             try:
-                unit = parse_unit(unit)
+                unit_val = parse_unit(unit)
             except Exception:
                 raise ValueError(f"Invalid unit: {unit}")
+    elif isinstance(unit, pint.Unit):
+        unit_val = unit
+
     if fmt is None:
         fmt = ACTIVE_CONFIG.default_format
     if fmt is not None:
-        print_value = f"{value:{fmt}}"
+        if isinstance(val_num, (int, float)) and float(val_num).is_integer() and any(c in fmt for c in "dxobX"):
+            val_num = int(val_num)
+        print_value = f"{val_num:{fmt}}"
     else:
-        print_value = f"{value}"
+        print_value = f"{val_num}"
     if "e" in print_value:
         print_value, exponent = print_value.split("e")
         exponent = str(int(exponent))
@@ -185,17 +201,17 @@ def format_value(
     if fmt is None or "." not in fmt:
         print_value = __truncate_zeros(print_value)
     if exponent:
-        if unit is None or unit.dimensionless and unit != ureg.percent:
+        if unit_val is None or (unit_val.dimensionless and unit_val != ureg.percent):
             return f"{print_value} \\times 10^{{{exponent}}}", False
         return (
             f"{print_value} \\times 10^{{{exponent}}}"
-            + (f"\\ {format_unit(unit, si=ACTIVE_CONFIG.use_siunitx)}" if unit else ""),
+            + (f"\\ {format_unit(unit_val, si=ACTIVE_CONFIG.use_siunitx)}" if unit_val else ""),
             True,
         )
-    if unit is None or unit.dimensionless and unit != ureg.percent:
+    if unit_val is None or (unit_val.dimensionless and unit_val != ureg.percent):
         return print_value, False
     return (
-        print_value + (f"\\ {format_unit(unit, si=ACTIVE_CONFIG.use_siunitx)}" if unit else ""),
+        print_value + (f"\\ {format_unit(unit_val, si=ACTIVE_CONFIG.use_siunitx)}" if unit_val else ""),
         True,
     )
 
@@ -209,41 +225,52 @@ def unit(unit: str | pint.Unit, in_math_mode: bool = False) -> str:
 
 def si(
     value: float | pint.Quantity | str,
-    fmt: Optional[str] = None,
-    unit: Optional[pint.Unit | str] = None,
+    fmt: str | None = None,
+    unit: pint.Unit | str | None = None,
     in_math_mode: bool = False,
-    in_unit: Optional[pint.Unit | str] = None,
+    in_unit: pint.Unit | str | None = None,
 ) -> Any:
     r"""Formats a value with SI units."""
     parse_value = True
-    if isinstance(value, str):
+    num_value: float | pint.Quantity | None = None
+    if isinstance(value, pint.Quantity):
+        num_value = value
+    elif isinstance(value, (int, float)):
+        num_value = float(value)
+    elif isinstance(value, str):
         try:
-            value = float(value)
+            num_value = float(value)
         except ValueError:
             parse_value = False
+
     if in_unit is not None:
         if unit is None and not isinstance(value, pint.Quantity):
             return si(value, fmt=fmt, unit=in_unit, in_math_mode=in_math_mode)
-        if not parse_value:
+        if not parse_value or num_value is None:
             raise ValueError(
                 f"Cannot perform unit conversion on non-numeric value (str) `{value}`"
             )
-        in_unit = parse_unit(in_unit)
+        resolved_in_unit = parse_unit(in_unit)
         if isinstance(value, pint.Quantity):
-            return si(value, fmt=fmt, unit=in_unit, in_math_mode=in_math_mode)
-        value = pint.Quantity(value, parse_unit(unit))
-        return si(value, fmt=fmt, unit=in_unit, in_math_mode=in_math_mode)
+            return si(value, fmt=fmt, unit=resolved_in_unit, in_math_mode=in_math_mode)
+        if unit is not None:
+            qty = pint.Quantity(num_value, parse_unit(unit))
+            return si(qty, fmt=fmt, unit=resolved_in_unit, in_math_mode=in_math_mode)
+        return si(num_value, fmt=fmt, unit=resolved_in_unit, in_math_mode=in_math_mode)
+
     if in_math_mode:
-        if parse_value:
-            return as_token(format_value(value, fmt, unit)[0])
+        if parse_value and num_value is not None:
+            return as_token(format_value(num_value, fmt, unit)[0])
         if unit is None:
             return as_token(value)
         return as_token(value) * Literal("\\ ") * as_token(format_unit(parse_unit(unit)))
-    if parse_value:
-        return "$" + "\\ " + format_value(value, fmt, unit)[0] + "$"
+
+    if parse_value and num_value is not None:
+        return "$" + "\\ " + format_value(num_value, fmt, unit)[0] + "$"
+    value_str = str(value)
     if unit is None:
-        return "$" + value + "$"
-    return "$" + value + "\\ " + format_unit(parse_unit(unit)) + "$"
+        return "$" + value_str + "$"
+    return "$" + value_str + "\\ " + format_unit(parse_unit(unit)) + "$"
 
 
 __all__ = [

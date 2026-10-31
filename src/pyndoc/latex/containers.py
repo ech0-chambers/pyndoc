@@ -1,16 +1,17 @@
 """Container and bracket AST tokens for grouping mathematical expressions."""
 
-from abc import ABC, abstractmethod
 import builtins
 import math
-from typing import Optional, Any
+from abc import ABC, abstractmethod
+from typing import Any
+
 from .config import ACTIVE_CONFIG
 from .core import (
-    Token,
     CallableToken,
+    Concatenation,
     Literal,
     Macro,
-    Concatenation,
+    Token,
     as_token,
     register_token_converter,
 )
@@ -28,7 +29,8 @@ class _Container(CallableToken, ABC):
     @property
     def value(self) -> Any:
         if len(self.children) == 1:
-            return self.children[0].value
+            child = self.children[0]
+            return getattr(child, "value", None)
         return None
 
     def __getitem__(self, index: int) -> Token:
@@ -36,7 +38,10 @@ class _Container(CallableToken, ABC):
 
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
         if len(self) == 1:
-            return self.children[0](*args, **kwargs)
+            child = self.children[0]
+            if isinstance(child, CallableToken):
+                return child(*args, **kwargs)
+            return Literal(str(child))
         raise ValueError(f"Cannot call a container with multiple {len(self)} children")
 
     def __len__(self) -> int:
@@ -132,7 +137,10 @@ class AbsoluteValue(Bracket):
             raise ValueError(
                 "Cannot evaluate AbsoluteValue of expression without a numeric value"
             )
-        return as_token(val)(*args, **kwargs)
+        tok = as_token(val)
+        if isinstance(tok, CallableToken):
+            return tok(*args, **kwargs)
+        return Literal(str(val))
 
 
 class Norm(Bracket):
@@ -160,7 +168,10 @@ class Norm(Bracket):
             raise ValueError(
                 "Cannot evaluate Norm of expression without a numeric value"
             )
-        return as_token(val)(*args, **kwargs)
+        tok = as_token(val)
+        if isinstance(tok, CallableToken):
+            return tok(*args, **kwargs)
+        return Literal(str(val))
 
 
 class Floor(Bracket):
@@ -188,7 +199,10 @@ class Floor(Bracket):
             raise ValueError(
                 "Cannot evaluate Floor of expression without a numeric value"
             )
-        return as_token(val)(*args, **kwargs)
+        tok = as_token(val)
+        if isinstance(tok, CallableToken):
+            return tok(*args, **kwargs)
+        return Literal(str(val))
 
 
 class Ceil(Bracket):
@@ -216,7 +230,10 @@ class Ceil(Bracket):
             raise ValueError(
                 "Cannot evaluate Ceil of expression without a numeric value"
             )
-        return as_token(val)(*args, **kwargs)
+        tok = as_token(val)
+        if isinstance(tok, CallableToken):
+            return tok(*args, **kwargs)
+        return Literal(str(val))
 
 
 class MixedBracket(Bracket):
@@ -234,8 +251,8 @@ class MixedBracket(Bracket):
     ) -> None:
         """A mixed bracketed expression, such as `[0, 1)`."""
         super().__init__(*children, scale=scale)
-        self.left_bracket = self.__bracket_shorthands.get(left, left)
-        self.right_bracket = self.__bracket_shorthands.get(right, right)
+        self.left_bracket = self.__bracket_shorthands.get(str(left), str(left))
+        self.right_bracket = self.__bracket_shorthands.get(str(right), str(right))
 
 
 class ArrayIndex(Token):
@@ -243,8 +260,8 @@ class ArrayIndex(Token):
         self,
         array: str | Token,
         *index: str | Token,
-        separate: Optional[bool] = None,
-        bracket_type: Optional[str] = None,
+        separate: bool | None = None,
+        bracket_type: str | None = None,
     ):
         self.array = texttt(array) if isinstance(array, str) else as_token(array)
         self.index = [texttt(i) if isinstance(i, str) else as_token(i) for i in index]
@@ -258,7 +275,7 @@ class ArrayIndex(Token):
         return ACTIVE_CONFIG.array_index_separate
 
     @separate.setter
-    def separate(self, value: Optional[bool]) -> None:
+    def separate(self, value: bool | None) -> None:
         self._separate = value
 
     @property
@@ -268,7 +285,7 @@ class ArrayIndex(Token):
         return ACTIVE_CONFIG.array_index_bracket_type
 
     @bracket_type.setter
-    def bracket_type(self, value: Optional[str]) -> None:
+    def bracket_type(self, value: str | None) -> None:
         self._bracket_type = value
 
     def __str__(self) -> str:
@@ -281,15 +298,15 @@ class ArrayIndex(Token):
             "round": ("(", ")"),
             "paren": ("(", ")"),
         }
-        bracket_type = bracket_types.get(self.bracket_type, ("[", "]"))
-        bracket_type = (
-            Macro("texttt", bracket_type[0]),
-            Macro("texttt", bracket_type[1]),
+        raw_delims = bracket_types.get(self.bracket_type, ("[", "]"))
+        delim_macros = (
+            Macro("texttt", raw_delims[0]),
+            Macro("texttt", raw_delims[1]),
         )
         if self.separate:
-            output.extend(bracket_type[0] & i & bracket_type[1] for i in self.index)
+            output.extend(delim_macros[0] & i & delim_macros[1] for i in self.index)
         else:
-            output.append(bracket_type[0] & Sequence(*self.index) & bracket_type[1])
+            output.append(delim_macros[0] & Sequence(*self.index) & delim_macros[1])
         return str(Concatenation(*output))
 
 

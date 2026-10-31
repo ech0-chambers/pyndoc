@@ -12,7 +12,8 @@ from __future__ import annotations
 import difflib
 import logging
 import re
-from typing import Any, Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
 import panflute as pf
 

@@ -8,15 +8,9 @@ Pandas DataFrames into valid Pandoc AST Table elements.
 from __future__ import annotations
 
 import logging
-from enum import Enum
-from typing import Any, Mapping, Sequence
-
-try:
-    from enum import StrEnum
-except ImportError:
-
-    class StrEnum(str, Enum):
-        pass
+from collections.abc import Mapping, Sequence
+from enum import StrEnum
+from typing import Any
 
 import panflute as pf
 
@@ -246,7 +240,7 @@ def _extract_table_data(data: Any) -> tuple[list[list[Any]], list[Any] | None]:
         headers = list(data.keys())
         col_values = [list(data[k]) for k in headers]
         max_rows = max((len(c) for c in col_values), default=0)
-        rows: list[list[Any]] = []
+        rows = []
         for r_idx in range(max_rows):
             row = [col[r_idx] if r_idx < len(col) else "" for col in col_values]
             rows.append(row)
@@ -319,7 +313,7 @@ def _resolve_widths(widths: Sequence[float] | float | None, num_cols: int) -> li
     if isinstance(widths, (int, float)):
         return [float(widths)] * num_cols
 
-    result = []
+    result: list[float | str] = []
     for w in widths:
         if w is None or w == "auto" or w == "ColWidthDefault":
             result.append("ColWidthDefault")

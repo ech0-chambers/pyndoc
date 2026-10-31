@@ -1,8 +1,9 @@
 """Calculus expressions: integrals, derivatives, limits, and summations."""
 
-from typing import Any, Optional
-from .core import Token, Macro, Literal, as_token
+from typing import Any
+
 from .containers import Collection
+from .core import Literal, Macro, Token, as_token
 
 
 class Tends(Token):
@@ -81,7 +82,7 @@ class Limit(LimitsExpression):
         self, expr: Token | Any, variable: Token | Any = None, limit: Token | Any = None
     ):
         """A limit expression, such as `\\lim_{x \\to a} f(x)`."""
-        lower_expr = None
+        lower_expr: Token | None = None
         if variable is not None and limit is not None:
             lower_expr = Tends(variable, limit)
         elif variable is not None:
@@ -141,7 +142,7 @@ class Derivative(Token):
     ):
         r"""A derivative expression, such as `\frac{\mathrm{d}^2 y}{\mathrm{d} x^2}`."""
         self.numerator_expr = as_token(numerator_expr)
-        self.denominator_expr = as_token(denominator_expr)
+        self.denominator_expr: Any = as_token(denominator_expr)
         self.order = as_token(order) if order != 1 else None
         self.as_operator = as_operator
         self.derivative_operator = Macro("mathrm", "d")
@@ -179,19 +180,35 @@ class PartialDerivative(Derivative):
         as_operator: bool = False,
     ):
         r"""A partial derivative expression, such as `\frac{\partial^2 y}{\partial x^2}`."""
-        super().__init__(numerator_expr, denominator_expr, order, as_operator)
-        self.denominator_expr = (as_token(expr) for expr in denominator_expr)
-        self.denominator_expr_orders = dict()
-        for expr in denominator_expr:
-            if expr in self.denominator_expr_orders:
-                self.denominator_expr_orders[expr] += 1
-            else:
-                self.denominator_expr_orders[expr] = 1
+        denom_tokens = tuple(as_token(expr) for expr in denominator_expr)
+        super().__init__(
+            numerator_expr,
+            denom_tokens[0] if denom_tokens else Literal(""),
+            order,
+            as_operator,
+        )
+        self.denominator_expr = denom_tokens
+        self.denominator_expr_orders: dict[Token, int] = {}
+        for tok in denom_tokens:
+            matched = False
+            for existing in self.denominator_expr_orders:
+                if str(existing) == str(tok):
+                    self.denominator_expr_orders[existing] += 1
+                    matched = True
+                    break
+            if not matched:
+                self.denominator_expr_orders[tok] = 1
+
         total_order = sum(self.denominator_expr_orders.values())
         if isinstance(order, int):
             if order > total_order:
                 diff = order - total_order
-                self.denominator_expr_orders[denominator_expr[-1]] += diff
+                if denom_tokens:
+                    last_tok = denom_tokens[-1]
+                    for existing in self.denominator_expr_orders:
+                        if str(existing) == str(last_tok):
+                            self.denominator_expr_orders[existing] += diff
+                            break
                 total_order = order
             elif order < total_order and order != 1:
                 raise ValueError(
@@ -201,6 +218,7 @@ class PartialDerivative(Derivative):
         self.derivative_operator = Macro("partial")
 
     def __str__(self) -> str:
+        numerator: Token
         if self.as_operator:
             if self.order is None:
                 numerator = self.derivative_operator

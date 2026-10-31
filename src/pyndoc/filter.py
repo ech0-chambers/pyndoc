@@ -7,19 +7,20 @@ a persistent document-level execution namespace, transforming them into Pandoc A
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import io
 import logging
-from pathlib import Path
 import sys
+from collections.abc import Collection, Sequence
+from pathlib import Path
 from typing import Any
-from collections.abc import Collection
 
 import panflute
 
-from pyndoc.formats import Format
-import pyndoc.markdown as md
 import pyndoc.latex as tex
+import pyndoc.markdown as md
+from pyndoc.formats import Format
 from pyndoc.preprocess import deindent
 
 logger = logging.getLogger("pyndoc.filter")
@@ -128,13 +129,28 @@ def handle_file(
     return constructor(out, format=format_name)
 
 
+def _evaluate_element_code(code: str, namespace: dict[str, Any]) -> Any:
+    """Evaluate Python code in an element block, allowing preparatory statements followed by an expression."""
+    parsed = ast.parse(code)
+    if not parsed.body:
+        return None
+    if isinstance(parsed.body[-1], ast.Expr):
+        if len(parsed.body) > 1:
+            exec_mod = ast.Module(body=parsed.body[:-1], type_ignores=[])
+            exec(compile(exec_mod, "<string>", "exec"), namespace)
+        expr = ast.Expression(body=parsed.body[-1].value)
+        return eval(compile(expr, "<string>", "eval"), namespace)
+    exec(code, namespace)
+    return None
+
+
 def handle_element(
     code: str, classes: list[str], element_type: type[panflute.Element]
 ) -> panflute.Element | list:
     """Handle an expression element (.py-md). Evaluates code and returns a panflute element."""
     code = deindent(code)
     try:
-        result = eval(code, USER_NAMESPACE)
+        result = _evaluate_element_code(code, USER_NAMESPACE)
     except Exception as e:
         logger.exception("Error evaluating expression element")
         return element_type(f"Error running code: {e}")
@@ -148,7 +164,7 @@ def handle_element(
 
     # If it's a single-element list containing an element, extract it
     if (
-        isinstance(result, Collection)
+        isinstance(result, Sequence)
         and not isinstance(result, (str, bytes))
         and len(result) == 1
         and isinstance(result[0], panflute.Element)

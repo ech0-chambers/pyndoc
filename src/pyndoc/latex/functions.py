@@ -22,10 +22,11 @@ from .core import (
 
 
 class NthRoot(CallableToken):
+    r"""The nth root of a value, such as `\sqrt{a}` or `\sqrt[3]{a}`."""
+
     def __init__(
         self, expr: TokenLike, root: TokenLike = 2
     ) -> None:
-        """The nth root of a value, such as `\\sqrt{a}` or `\\sqrt[3]{a}`."""
         self.expr = as_token(expr)
         self.root = as_token(root)
 
@@ -441,10 +442,11 @@ class HyperbolicArcCotangent(_TrigFunction):
 
 
 class Logarithm(CallableToken):
+    r"""A logarithm expression, such as `\log_{10}(100)`."""
+
     def __init__(
         self, expr: TokenLike, base: TokenLike = 10
     ) -> None:
-        """A logarithm expression, such as `\\log_{10}(100)`."""
         self.expr = as_token(expr)
         self.base = as_token(base)
 
@@ -486,10 +488,11 @@ class NaturalLogarithm(Logarithm):
 
 
 class Exponential(CallableToken):
+    r"""An exponential expression, such as `\exp(a)`."""
+
     def __init__(
         self, expr: TokenLike, use_exp: bool | None = None
     ) -> None:
-        """An exponential expression, such as `\\exp(a)`."""
         self.expr = as_token(expr)
         self.use_exp = use_exp
 
@@ -517,6 +520,8 @@ class Exponential(CallableToken):
 
 
 class Function(Token):
+    """A function expression, such as `f(a, b)`."""
+
     def __init__(
         self,
         name: Token | str,
@@ -524,7 +529,6 @@ class Function(Token):
         upright_name: bool = False,
         power: int | Token | None = None,
     ) -> None:
-        """A function expression, such as `f(a, b)`."""
         self.name = as_token(name)
         if upright_name:
             self.name = Macro("mathrm", self.name)

@@ -1,0 +1,186 @@
+/* ==========================================================================
+   Pyndoc Documentation Examples & Listings Styling
+   tcolorbox / tcblisting style container for live-rendered Markdown examples
+   ========================================================================== */
+
+/* Main unified example container */
+.pyndoc-example {
+  position: relative;
+  margin: 1.5em 0;
+  border: 1px solid var(--md-default-fg-color--lighter);
+  border-radius: 0.25rem;
+  box-shadow: var(--md-shadow-z1);
+  background-color: var(--md-default-bg-color);
+  overflow: hidden;
+  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.pyndoc-example:hover {
+  box-shadow: var(--md-shadow-z2);
+  border-color: var(--md-default-fg-color--light);
+}
+
+/* Optional header bar when title is specified */
+.pyndoc-example-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.85rem;
+  background-color: var(--md-code-bg-color);
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+  font-family: var(--md-text-font-family);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--md-default-fg-color);
+}
+
+.pyndoc-example-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--md-default-fg-color);
+}
+
+.pyndoc-example-badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-radius: 0.2rem;
+  background-color: var(--md-primary-fg-color--transparent, rgba(63, 81, 181, 0.12));
+  color: var(--md-primary-fg-color);
+}
+
+/* Source code upper compartment */
+.pyndoc-example-source {
+  position: relative;
+  background-color: var(--md-code-bg-color);
+}
+
+.pyndoc-example-source .highlight,
+.pyndoc-example-source pre {
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+}
+
+.pyndoc-example-source pre > code {
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  padding: 0.85rem 1.15rem;
+}
+
+/* Divider separating code listing from rendered output */
+.pyndoc-example-divider {
+  display: flex;
+  align-items: center;
+  padding: 0.35rem 0.85rem;
+  background-color: var(--md-default-bg-color);
+  border-top: 1px dashed var(--md-default-fg-color--lighter);
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.pyndoc-example-divider-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--md-default-fg-color--light);
+}
+
+.pyndoc-example-divider-label::before {
+  content: "";
+  display: inline-block;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background-color: var(--md-primary-fg-color);
+}
+
+/* Lower compartment: Rendered HTML preview */
+.pyndoc-example-preview {
+  padding: 1rem 1.25rem;
+  background-color: var(--md-default-bg-color);
+  color: var(--md-typeset-color);
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.pyndoc-example-preview > :first-child {
+  margin-top: 0 !important;
+}
+
+.pyndoc-example-preview > :last-child {
+  margin-bottom: 0 !important;
+}
+
+/* Render error alert block */
+.pyndoc-example-error {
+  padding: 0.75rem 1rem;
+  border-left: 0.25rem solid #e53935;
+  background-color: rgba(229, 57, 53, 0.08);
+  border-radius: 0.15rem;
+  color: var(--md-default-fg-color);
+}
+
+.pyndoc-example-error .error-title {
+  display: block;
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #e53935;
+  margin-bottom: 0.35rem;
+}
+
+.pyndoc-example-error pre {
+  margin: 0;
+  padding: 0.4rem;
+  font-size: 0.75rem;
+  background-color: var(--md-code-bg-color);
+  border-radius: 0.15rem;
+  overflow-x: auto;
+}
+
+/* ==========================================================================
+   MathJax & Inline Math Layout Protection
+   Prevents Material for MkDocs' `.md-typeset .inline` image-float rule
+   (which applies `float: left; width: 11.7rem; margin-right: .8rem` on screens >= 45em)
+   from matching or mangling Pandoc inline math (<span class="math inline">) or MathJax.
+   ========================================================================== */
+
+/* Unset floats, widths, and margins on all math inline elements */
+[dir=ltr] .md-typeset .math.inline,
+[dir=rtl] .md-typeset .math.inline,
+.md-typeset .math.inline,
+.md-typeset .math-inline,
+.md-typeset .arithmatex,
+.md-typeset mjx-container:not([display="true"]) {
+  float: none !important;
+  width: auto !important;
+  margin: 0 !important;
+  display: inline !important;
+}
+
+/* Ensure display math remains centered, block-level, and unfloated */
+[dir=ltr] .md-typeset .math.display,
+[dir=rtl] .md-typeset .math.display,
+.md-typeset .math.display,
+.md-typeset .math-display,
+.md-typeset div.arithmatex,
+.md-typeset mjx-container[display="true"] {
+  float: none !important;
+  width: auto !important;
+  display: block !important;
+  margin: 1em 0 !important;
+  text-align: center;
+}
+}

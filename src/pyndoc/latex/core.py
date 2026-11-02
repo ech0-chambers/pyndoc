@@ -164,14 +164,15 @@ class Token(ABC):
 
 
 class Literal(Token):
-    def __init__(self, value: str | float) -> None:
-        """Contains a string or float to handle its behaviour for typesetting.
+    """Contains a string or float to handle its behaviour for typesetting.
 
-        Parameters
-        ----------
-        value : str | float
-            The value of the literal
-        """
+    Parameters
+    ----------
+    value : str | float
+        The value of the literal
+    """
+
+    def __init__(self, value: str | float) -> None:
         self.value = value
 
     def __str__(self) -> str:
@@ -179,17 +180,19 @@ class Literal(Token):
 
 
 class DimensionedLiteral(Literal):
+    """Contains a string or float to handle its behaviour for typesetting.
+
+    This differs from a Literal in that it is assumed to also contain units,
+    and so some operators may treat it differently for bracketing purposes.
+
+    Parameters
+    ----------
+    value : str | float
+        The value of the literal
+    """
+
     # differentiates from a regular Literal so that operators like Power can bracket appropriately.
     def __init__(self, value: str | float) -> None:
-        """Contains a string or float to handle its behaviour for typesetting.
-        This differs from a Literal in that it is assumed to also contain units,
-        and so some operators may treat it differently for bracketing purposes.
-
-        Parameters
-        ----------
-        value : str | float
-            The value of the literal
-        """
         super().__init__(value)
 
 
@@ -232,24 +235,25 @@ class CallableToken(Token, ABC):
 
 
 class Argument:
+    """An argument to a macro or environment.
+
+    Parameters
+    ----------
+    arg : TokenLike | dict[str, Any]
+        The argument to the macro or environment. This can be a dictionary of key-value pairs,
+        in which case they will be formatted as key=value.
+    is_optional : bool, optional
+        If True, the argument will be rendered as optional, using square brackets instead of braces.
+    in_expl3 : bool, optional
+        If True, spaces in the argument are replaced with `~`.
+    """
+
     def __init__(
         self,
         arg: TokenLike | dict[str, Any],
         is_optional: bool = False,
         in_expl3: bool = False,
     ):
-        """An argument to a macro or environment.
-
-        Parameters
-        ----------
-        arg : TokenLike | Dict[str, Any]
-            The argument to the macro or environment. This can be a dictionary of key-value pairs,
-            in which case they will be formatted as key=value.
-        is_optional : bool, optional
-            If True, the argument will be rendered as optional, using square brackets instead of braces.
-        in_expl3 : bool, optional
-            If True, spaces in the argument are replaced with `~`.
-        """
         self.arg = arg
         self.optional = is_optional
         self.in_expl3 = in_expl3
@@ -275,23 +279,24 @@ class Argument:
 
 
 class Macro(Token):
+    r"""A LaTeX macro, optionally with arguments.
+
+    Parameters
+    ----------
+    name : str
+        The name of the macro. For example, `Macro("LaTeX")` renders as `\LaTeX`.
+    arguments : TokenLike | tuple[TokenLike, bool] | dict[str, Any] | Argument
+        Arguments for the macro.
+    in_expl3 : bool, optional
+        If True, spaces in arguments will be replaced with `~`.
+    """
+
     def __init__(
         self,
         name: str,
         *arguments: TokenLike | tuple[TokenLike, bool] | dict[str, Any] | Argument,
         in_expl3: bool = False,
     ):
-        r"""A LaTeX macro, optionally with arguments.
-
-        Parameters
-        ----------
-        name : str
-            The name of the macro. For example, `Macro("LaTeX")` renders as `\LaTeX`.
-        arguments : TokenLike | Tuple[TokenLike, bool] | Dict[str, Any] | Argument
-            Arguments for the macro.
-        in_expl3 : bool, optional
-            If True, spaces in arguments will be replaced with `~`.
-        """
         self.name = name
         self.arguments = arguments
         self.in_expl3 = in_expl3
@@ -313,6 +318,20 @@ class Macro(Token):
 
 
 class Environment(Token):
+    r"""A LaTeX environment, optionally with arguments.
+
+    Parameters
+    ----------
+    name : str
+        The name of the environment.
+    arguments : str | tuple[str, bool] | Argument, optional
+        Arguments for the environment.
+    content : str | Token | list[Token], optional
+        The content of the environment.
+    in_expl3 : bool, optional
+        If True, spaces in arguments will be replaced with `~`.
+    """
+
     def __init__(
         self,
         name: str,
@@ -320,19 +339,6 @@ class Environment(Token):
         content: str | Token | list[Token] | None = None,
         in_expl3: bool = False,
     ):
-        r"""A LaTeX environment, optionally with arguments.
-
-        Parameters
-        ----------
-        name : str
-            The name of the environment.
-        arguments : str | Tuple[str, bool] | Argument, optional
-            Arguments for the environment.
-        content : str | Token | List[Token], optional
-            The content of the environment.
-        in_expl3 : bool, optional
-            If True, spaces in arguments will be replaced with `~`.
-        """
         self.name = name
         self.arguments = arguments
         self.content = content
@@ -458,10 +464,11 @@ class _UnaryOperator(CallableToken, ABC):
 
 
 class Negation(_UnaryOperator):
+    """Negates a value, such as `-a`."""
+
     precedence = 30
 
     def __init__(self, value: TokenLike) -> None:
-        """Negates a value, such as `-a`."""
         super().__init__(value)
         self.symbol = "-"
 
@@ -470,10 +477,11 @@ class Negation(_UnaryOperator):
 
 
 class Positive(_UnaryOperator):
+    """Returns the positive value of a quantity, such as `+a`."""
+
     precedence = 30
 
     def __init__(self, value: TokenLike) -> None:
-        """Returns the positive value of a quantity, such as `+a`."""
         super().__init__(value)
         self.symbol = "+"
 
@@ -570,6 +578,8 @@ class _BinaryOperator(CallableToken, ABC):
 
 
 class Addition(_BinaryOperator):
+    """Adds two values together, such as `a + b`."""
+
     precedence = 10
     is_associative = True
     bracket_left = True
@@ -578,7 +588,6 @@ class Addition(_BinaryOperator):
     def __init__(
         self, left: TokenLike, right: TokenLike
     ) -> None:
-        """Adds two values together, such as `a + b`."""
         super().__init__(left, right)
         self.symbol = "+"
 
@@ -587,6 +596,8 @@ class Addition(_BinaryOperator):
 
 
 class Subtraction(_BinaryOperator):
+    """Subtracts one value from another, such as `a - b`."""
+
     precedence = 10
     is_associative = False
     bracket_left = True
@@ -595,7 +606,6 @@ class Subtraction(_BinaryOperator):
     def __init__(
         self, left: TokenLike, right: TokenLike
     ) -> None:
-        """Subtracts one value from another, such as `a - b`."""
         super().__init__(left, right)
         self.symbol = "-"
 
@@ -604,6 +614,8 @@ class Subtraction(_BinaryOperator):
 
 
 class Multiplication(_BinaryOperator):
+    """Multiplies two values together, such as `a * b`. This is rendered as `ab`."""
+
     precedence = 20
     is_associative = True
     bracket_left = True
@@ -612,7 +624,6 @@ class Multiplication(_BinaryOperator):
     def __init__(
         self, left: TokenLike, right: TokenLike
     ) -> None:
-        """Multiplies two values together, such as `a * b`. This is rendered as `ab`."""
         super().__init__(left, right)
         self.symbol = ""
 
@@ -621,6 +632,11 @@ class Multiplication(_BinaryOperator):
 
 
 class Times(_BinaryOperator):
+    r"""Multiplies two values together, such as `a * b`.
+
+    Rendered as `a \times b` (or configured multiplication_operator).
+    """
+
     precedence = 20
     is_associative = True
     bracket_left = True
@@ -629,9 +645,6 @@ class Times(_BinaryOperator):
     def __init__(
         self, left: TokenLike, right: TokenLike
     ) -> None:
-        r"""Multiplies two values together, such as `a * b`.
-        Rendered as `a \times b` (or configured multiplication_operator).
-        """
         super().__init__(left, right)
         self._custom_symbol: str | None = None
 
@@ -650,6 +663,8 @@ class Times(_BinaryOperator):
 
 
 class Division(_BinaryOperator):
+    r"""Divides one value by another, rendered as `\frac{a}{b}` or `\dfrac{a}{b}`."""
+
     precedence = 20
     bracket_left = False
     bracket_right = False
@@ -660,7 +675,6 @@ class Division(_BinaryOperator):
         right: TokenLike,
         display_mode: bool = False,
     ) -> None:
-        r"""Divides one value by another, rendered as `\frac{a}{b}` or `\dfrac{a}{b}`."""
         super().__init__(left, right)
         if display_mode:
             self.symbol = "\\dfrac"
@@ -680,6 +694,8 @@ class Division(_BinaryOperator):
 
 
 class Power(_BinaryOperator):
+    """Raises one value to the power of another, such as `a ** b`."""
+
     precedence = 40
     is_associative = False
     bracket_left = True
@@ -690,7 +706,6 @@ class Power(_BinaryOperator):
         left: TokenLike,
         right: TokenLike,
     ) -> None:
-        """Raises one value to the power of another, such as `a ** b`."""
         super().__init__(left, right)
         self.symbol = "^"
 
@@ -711,6 +726,8 @@ class Power(_BinaryOperator):
 
 
 class Index(_BinaryOperator):
+    """Indexes one value with another, such as `a_i`."""
+
     precedence = 40
     bracket_left = True
     bracket_right = False
@@ -720,7 +737,6 @@ class Index(_BinaryOperator):
         left: TokenLike,
         right: TokenLike,
     ) -> None:
-        """Indexes one value with another, such as `a_i`."""
         super().__init__(left, right)
         self.symbol = "_"
 
@@ -739,8 +755,9 @@ class Index(_BinaryOperator):
 
 
 class Concatenation(Token):
+    """Concatenates a number of values together, such as `Concatenation(a, b, c)` --> `abc`."""
+
     def __init__(self, *args: TokenLike) -> None:
-        """Concatenates a number of values together, such as `Concatenation(a, b, c)` --> `abc`."""
         self.args = tuple(as_token(arg) for arg in args)
 
     def __str__(self) -> str:
@@ -818,10 +835,11 @@ class _BooleanBinaryOperator(_BinaryOperator):
 
 
 class Equality(_BooleanBinaryOperator):
+    """Equality between two expressions, such as `a = b`."""
+
     def __init__(
         self, left: TokenLike, right: TokenLike
     ) -> None:
-        """Equality between two expressions, such as `a = b`."""
         super().__init__(left, right)
         self.symbol = "="
 
@@ -833,10 +851,11 @@ class Equality(_BooleanBinaryOperator):
 
 
 class LessThan(_BooleanBinaryOperator):
+    """Inequality between two expressions, such as `a < b`."""
+
     def __init__(
         self, left: TokenLike, right: TokenLike
     ) -> None:
-        """Inequality between two expressions, such as `a < b`."""
         super().__init__(left, right)
         self.symbol = "<"
 
@@ -848,10 +867,11 @@ class LessThan(_BooleanBinaryOperator):
 
 
 class GreaterThan(_BooleanBinaryOperator):
+    """Inequality between two expressions, such as `a > b`."""
+
     def __init__(
         self, left: TokenLike, right: TokenLike
     ) -> None:
-        """Inequality between two expressions, such as `a > b`."""
         super().__init__(left, right)
         self.symbol = ">"
 
@@ -863,10 +883,11 @@ class GreaterThan(_BooleanBinaryOperator):
 
 
 class LessThanOrEqual(_BooleanBinaryOperator):
+    r"""Inequality between two expressions, such as `a <= b` (\leq)."""
+
     def __init__(
         self, left: TokenLike, right: TokenLike
     ) -> None:
-        r"""Inequality between two expressions, such as `a <= b` (\leq)."""
         super().__init__(left, right)
         self.symbol = "\\leq"
 
@@ -878,10 +899,11 @@ class LessThanOrEqual(_BooleanBinaryOperator):
 
 
 class GreaterThanOrEqual(_BooleanBinaryOperator):
+    r"""Inequality between two expressions, such as `a >= b` (\geq)."""
+
     def __init__(
         self, left: TokenLike, right: TokenLike
     ) -> None:
-        r"""Inequality between two expressions, such as `a >= b` (\geq)."""
         super().__init__(left, right)
         self.symbol = "\\geq"
 
@@ -893,10 +915,11 @@ class GreaterThanOrEqual(_BooleanBinaryOperator):
 
 
 class NotEqual(_BooleanBinaryOperator):
+    r"""Inequality between two expressions, such as `a != b` (\neq)."""
+
     def __init__(
         self, left: TokenLike, right: TokenLike
     ) -> None:
-        r"""Inequality between two expressions, such as `a != b` (\neq)."""
         super().__init__(left, right)
         self.symbol = "\\neq"
 
@@ -908,10 +931,11 @@ class NotEqual(_BooleanBinaryOperator):
 
 
 class Approximation(_BooleanBinaryOperator):
+    r"""Approximate equality between two expressions, such as `a \approx b`."""
+
     def __init__(
         self, left: TokenLike, right: TokenLike
     ) -> None:
-        r"""Approximate equality between two expressions, such as `a \approx b`."""
         super().__init__(left, right)
         self.symbol = "\\approx"
 
@@ -922,10 +946,11 @@ class Approximation(_BooleanBinaryOperator):
 
 
 class Equivalence(_BooleanBinaryOperator):
+    r"""Logical equivalence between two expressions, such as `a \equiv b`."""
+
     def __init__(
         self, left: TokenLike, right: TokenLike
     ) -> None:
-        r"""Logical equivalence between two expressions, such as `a \equiv b`."""
         super().__init__(left, right)
         self.symbol = "\\equiv"
 

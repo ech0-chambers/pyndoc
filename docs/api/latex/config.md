@@ -1,0 +1,3 @@
+# Configuration
+
+::: pyndoc.latex.config

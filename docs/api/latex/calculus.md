@@ -1,0 +1,3 @@
+# Calculus
+
+::: pyndoc.latex.calculus

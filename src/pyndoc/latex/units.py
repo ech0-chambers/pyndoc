@@ -26,7 +26,6 @@ __default_preferred_units = [
     ureg.joule,
     ureg.watt,
     ureg.tesla,
-    ureg.hertz,
     ureg.newton,
 ]
 

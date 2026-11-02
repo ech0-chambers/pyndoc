@@ -1,0 +1,3 @@
+# Tables
+
+::: pyndoc.markdown.tables

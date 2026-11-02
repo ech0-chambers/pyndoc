@@ -1,0 +1,3 @@
+# Preprocessor
+
+::: pyndoc.preprocess

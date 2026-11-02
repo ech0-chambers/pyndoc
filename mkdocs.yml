@@ -1,0 +1,115 @@
+site_name: Pyndoc
+site_description: In-process Python execution, mathematical LaTeX AST, and Markdown generation for Pandoc.
+site_author: ech0-chambers
+site_url: https://ech0-chambers.github.io/pyndoc/
+repo_url: https://github.com/ech0-chambers/pyndoc
+repo_name: ech0-chambers/pyndoc
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.indexes
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - src
+          options:
+            docstring_style: numpy
+            members_order: source
+            show_root_heading: true
+            show_source: true
+            show_signature_annotations: true
+            separate_signature: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+
+extra_css:
+  - stylesheets/pyndoc.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+hooks:
+  - docs/hooks/examples.py
+  - docs/hooks/autolink.py
+
+exclude_docs: |
+  legacy/*
+  examples/*
+
+not_in_nav: |
+  legacy/*
+  examples/*
+
+nav:
+  - Home: index.md
+  - User Guide:
+      - Overview: user-guide/index.md
+      - Getting Started: user-guide/getting-started.md
+      - Preprocessing Directives: user-guide/preprocessing.md
+      - Filter Execution: user-guide/filter.md
+      - Mathematical Typesetting: user-guide/math-typesetting.md
+      - Markdown AST Generation: user-guide/markdown-ast.md
+  - API Reference:
+      - Overview: api/index.md
+      - Command Line Interface: api/cli.md
+      - Preprocessor: api/preprocess.md
+      - Filter Runtime: api/filter.md
+      - Formats: api/formats.md
+      - Timer: api/timer.md
+      - LaTeX Submodule:
+          - Overview: api/latex/index.md
+          - Core AST: api/latex/core.md
+          - Quantities & Variables: api/latex/quantity.md
+          - DSL Parser: api/latex/dsl.md
+          - Containers & Delimiters: api/latex/containers.md
+          - Functions: api/latex/functions.md
+          - Calculus: api/latex/calculus.md
+          - Typography & Layout: api/latex/typography.md
+          - Symbols & Constants: api/latex/symbols.md
+          - Configuration: api/latex/config.md
+          - Units: api/latex/units.md
+      - Markdown Submodule:
+          - Overview: api/markdown/index.md
+          - Tables: api/markdown/tables.md
+          - Lists: api/markdown/lists.md
+          - Block Elements: api/markdown/blocks.md
+          - Inline Elements: api/markdown/inlines.md
+          - Coercion Utilities: api/markdown/coercion.md
+          - Conversion: api/markdown/convert.md

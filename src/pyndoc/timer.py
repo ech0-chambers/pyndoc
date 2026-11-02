@@ -62,6 +62,15 @@ class Timer:
 
     Logs a starting message on entry and either a completion or failure message
     upon exit.
+
+    Parameters
+    ----------
+    task_name : str | None, optional
+        Optional descriptive name for the task.
+    logger : logging.Logger | None, optional
+        Optional logger to record messages to. If None, prints to stdout.
+    log_level : int | str | None, optional
+        Optional logging level (e.g. logging.INFO, 'DEBUG'). Defaults to INFO.
     """
 
     def __init__(
@@ -70,13 +79,6 @@ class Timer:
         logger: logging.Logger | None = None,
         log_level: int | str | None = None,
     ) -> None:
-        """Initialize the Timer context manager.
-
-        Args:
-            task_name: Optional descriptive name for the task.
-            logger: Optional logger to record messages to. If None, prints to stdout.
-            log_level: Optional logging level (e.g. logging.INFO, 'DEBUG'). Defaults to INFO.
-        """
         self.task_name = task_name
         self.logger = logger
         self.log_level = log_level

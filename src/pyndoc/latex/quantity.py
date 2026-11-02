@@ -15,23 +15,24 @@ from .units import format_value, parse_unit, ureg
 
 
 class Quantity(CallableToken):
+    r"""A quantity with a value and unit.
+
+    Parameters
+    ----------
+    value : float | int | complex | pint.Quantity
+        The value of the quantity.
+    fmt : str | None, optional
+        Format specifier. If None, default format will be used.
+    unit : pint.Unit | str | None, optional
+        The unit of the quantity.
+    """
+
     def __init__(
         self,
         value: float | int | complex | pint.Quantity,
         fmt: str | None = None,
         unit: pint.Unit | str | None = None,
     ) -> None:
-        r"""A quantity with a value and unit.
-
-        Parameters
-        ----------
-        value : float | int | complex | pint.Quantity
-            The value of the quantity.
-        fmt : str | None, optional
-            Format specifier. If None, default format will be used.
-        unit : pint.Unit | str | None, optional
-            The unit of the quantity.
-        """
         if isinstance(value, bool):
             raise TypeError(
                 f"Quantity expects a numeric scalar or pint.Quantity, not a bool ({value!r})."
@@ -142,6 +143,20 @@ class Quantity(CallableToken):
 
 
 class Variable(CallableToken):
+    r"""A variable with a name, value, and optional unit and format specifier.
+
+    Parameters
+    ----------
+    name : str
+        The variable name or symbol representation.
+    value : float | int | complex | pint.Quantity | Token
+        The value or expression of the variable.
+    fmt : str | None, optional
+        Format specifier for string representation.
+    unit : pint.Unit | str | None, optional
+        The unit of the variable.
+    """
+
     def __init__(
         self,
         name: str,
@@ -149,7 +164,6 @@ class Variable(CallableToken):
         fmt: str | None = None,
         unit: pint.Unit | str | None = None,
     ) -> None:
-        r"""A variable with a name, value, and optional unit and format specifier."""
         self.name = Literal(name)
         if isinstance(value, bool):
             raise TypeError(

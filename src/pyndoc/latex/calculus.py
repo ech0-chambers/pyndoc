@@ -7,8 +7,9 @@ from .core import Literal, Macro, Token, as_token
 
 
 class Tends(Token):
+    r"""A limit expression, such as `x \to a`."""
+
     def __init__(self, variable: Token | Any, limit: Token | Any) -> None:
-        """A limit expression, such as `x \\to a`."""
         self.variable = as_token(variable)
         self.limit = as_token(limit)
 
@@ -17,6 +18,8 @@ class Tends(Token):
 
 
 class LimitsExpression(Token):
+    """A mathematical expression with limits, such as an integral or summation."""
+
     def __init__(
         self,
         function: Macro | Token | str,
@@ -25,7 +28,6 @@ class LimitsExpression(Token):
         upper: Token | Any = None,
         suffix: Token | Any = None,
     ):
-        """A mathematical expression with limits, such as an integral or summation."""
         self.value = None
         if isinstance(function, str):
             function = Macro(function)
@@ -47,6 +49,8 @@ class LimitsExpression(Token):
 
 
 class Integral(LimitsExpression):
+    r"""An integral expression, such as `\int_{a}^{b} f(x) dx`."""
+
     def __init__(
         self,
         expr: Token | Any,
@@ -55,7 +59,6 @@ class Integral(LimitsExpression):
         variable: Token | Any = None,
         operator: str = "int",
     ):
-        """An integral expression, such as `\\int_{a}^{b} f(x) dx`."""
         suffix = Macro(",") & Macro("mathrm", "d") & variable if variable is not None else None
         super().__init__(
             operator, expr, lower, upper, suffix
@@ -63,6 +66,8 @@ class Integral(LimitsExpression):
 
 
 class ContourIntegral(Integral):
+    r"""A contour or closed-loop integral, such as `\oint_{C} f(z) dz`."""
+
     def __init__(
         self,
         expr: Token | Any,
@@ -70,7 +75,6 @@ class ContourIntegral(Integral):
         upper: Token | Any = None,
         variable: Token | Any = None,
     ):
-        """A contour or closed-loop integral, such as `\\oint_{C} f(z) dz`."""
         super().__init__(expr, lower, upper, variable, operator="oint")
 
 
@@ -78,10 +82,11 @@ oint = ContourIntegral
 
 
 class Limit(LimitsExpression):
+    r"""A limit expression, such as `\lim_{x \to a} f(x)`."""
+
     def __init__(
         self, expr: Token | Any, variable: Token | Any = None, limit: Token | Any = None
     ):
-        """A limit expression, such as `\\lim_{x \\to a} f(x)`."""
         lower_expr: Token | None = None
         if variable is not None and limit is not None:
             lower_expr = Tends(variable, limit)
@@ -93,6 +98,8 @@ class Limit(LimitsExpression):
 
 
 class Summation(LimitsExpression):
+    r"""A summation expression, such as `\sum_{i = 0}^{n} a_i`."""
+
     def __init__(
         self,
         expr: Token | Any,
@@ -100,7 +107,6 @@ class Summation(LimitsExpression):
         variable: Token | Any = None,
         upper: Token | Any = None,
     ):
-        """A summation expression, such as `\\sum_{i = 0}^{n} a_i`."""
         if lower is None and variable is None:
             lower_expr = None
         elif lower is None:
@@ -113,6 +119,8 @@ class Summation(LimitsExpression):
 
 
 class Product(LimitsExpression):
+    r"""A product expression, such as `\prod_{i = 0}^{n} a_i`."""
+
     def __init__(
         self,
         expr: Token | Any,
@@ -120,7 +128,6 @@ class Product(LimitsExpression):
         variable: Token | Any = None,
         upper: Token | Any = None,
     ):
-        """A product expression, such as `\\prod_{i = 0}^{n} a_i`."""
         if lower is None and variable is None:
             lower_expr = None
         elif lower is None:
@@ -133,6 +140,8 @@ class Product(LimitsExpression):
 
 
 class Derivative(Token):
+    r"""A derivative expression, such as `\frac{\mathrm{d}^2 y}{\mathrm{d} x^2}`."""
+
     def __init__(
         self,
         numerator_expr: Token | Any,
@@ -140,7 +149,6 @@ class Derivative(Token):
         order: int | Token | Any = 1,
         as_operator: bool = False,
     ):
-        r"""A derivative expression, such as `\frac{\mathrm{d}^2 y}{\mathrm{d} x^2}`."""
         self.numerator_expr = as_token(numerator_expr)
         self.denominator_expr: Any = as_token(denominator_expr)
         self.order = as_token(order) if order != 1 else None
@@ -172,6 +180,8 @@ class Derivative(Token):
 
 
 class PartialDerivative(Derivative):
+    r"""A partial derivative expression, such as `\frac{\partial^2 y}{\partial x^2}`."""
+
     def __init__(
         self,
         numerator_expr: Token | Any,
@@ -179,7 +189,6 @@ class PartialDerivative(Derivative):
         order: int | Token | Any = 1,
         as_operator: bool = False,
     ):
-        r"""A partial derivative expression, such as `\frac{\partial^2 y}{\partial x^2}`."""
         denom_tokens = tuple(as_token(expr) for expr in denominator_expr)
         super().__init__(
             numerator_expr,

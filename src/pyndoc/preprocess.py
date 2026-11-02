@@ -18,6 +18,19 @@ from rich.style import Style
 from rich.syntax import Syntax
 from rich.text import Text
 
+__all__ = [
+    "preprocess",
+    "deindent",
+    "get_console",
+    "set_console",
+    "reset_console",
+    "no_console",
+    "PreprocessorError",
+    "PreprocessorParsingError",
+    "PreprocessingIndentationError",
+    "PreprocessingMixedTabsAndSpacesError",
+]
+
 # ==============================================================================
 # Exceptions & Diagnostic Error Reporting
 # ==============================================================================
@@ -148,7 +161,7 @@ def _format_windowed_line(
     return windowed_text, caret_str
 
 
-def get_line_number(text: str, index: int) -> int:
+def _get_line_number(text: str, index: int) -> int:
     """Calculate the 0-indexed line number corresponding to a character index in text.
 
     Args:
@@ -161,7 +174,7 @@ def get_line_number(text: str, index: int) -> int:
     return text.count("\n", 0, index)
 
 
-def raise_parsing_error(
+def _raise_parsing_error(
     contents: str,
     start: int,
     message: str,
@@ -185,7 +198,7 @@ def raise_parsing_error(
     if console is None:
         console = _CONSOLE
 
-    error_line_index = get_line_number(contents, start)
+    error_line_index = _get_line_number(contents, start)
     error_line_number = error_line_index + 1
     error_column_number = start - contents.rfind("\n", 0, start) - 1
 
@@ -319,7 +332,7 @@ def deindent(code: str) -> str:
     return "\n".join(lines)
 
 
-def is_only_text_on_line(text: str, start: int, end: int) -> bool:
+def _is_only_text_on_line(text: str, start: int, end: int) -> bool:
     """Determine if a character span [start, end) is the solitary content on its line(s).
 
     Used to decide whether an expression should be rendered as a standalone
@@ -351,7 +364,7 @@ def is_only_text_on_line(text: str, start: int, end: int) -> bool:
 # ==============================================================================
 
 
-def scan_delimiter_run(contents: str, start: int) -> int:
+def _scan_delimiter_run(contents: str, start: int) -> int:
     if start >= len(contents):
         return 0
     delimiter = contents[start]
@@ -362,7 +375,7 @@ def scan_delimiter_run(contents: str, start: int) -> int:
     return cursor - start
 
 
-def read_code_span(contents: str, start: int) -> tuple[int, str]:
+def _read_code_span(contents: str, start: int) -> tuple[int, str]:
     """Scan and skip existing Markdown code spans or fenced blocks.
 
     Ensures that Pyndoc syntax delimiters inside raw Markdown code blocks or
@@ -383,7 +396,7 @@ def read_code_span(contents: str, start: int) -> tuple[int, str]:
         return 0, ""
 
     # 1. Measure the length of the opening delimiter run
-    fence_length = scan_delimiter_run(contents, start)
+    fence_length = _scan_delimiter_run(contents, start)
 
     # In Markdown, single or double tildes are strikethrough/subscript marks, not code blocks.
     # Only 3 or more tildes ('~~~') constitute a fenced code block.
@@ -402,13 +415,13 @@ def read_code_span(contents: str, start: int) -> tuple[int, str]:
 
         if not is_fenced_block and contents[cursor] == "\n":
             error_message = "Newline encountered while parsing inline code span"
-            raise_parsing_error(
+            _raise_parsing_error(
                 contents, start, error_message, length=cursor - start - 1
             )
 
         if contents[cursor] == delimiter:
             run_start = cursor
-            run_length = scan_delimiter_run(contents, cursor)
+            run_length = _scan_delimiter_run(contents, cursor)
 
             # Check for a valid closing delimiter run:
             # - Inline code (` or ``): requires an exact run length match.
@@ -430,10 +443,10 @@ def read_code_span(contents: str, start: int) -> tuple[int, str]:
     span_type = "block" if is_fenced_block else "span"
     error_message = f"Unterminated code {span_type}"
 
-    raise_parsing_error(contents, start, error_message, length=fence_length)
+    _raise_parsing_error(contents, start, error_message, length=fence_length)
 
 
-def read_dollar_math_span(contents: str, start: int) -> tuple[int, str]:
+def _read_dollar_math_span(contents: str, start: int) -> tuple[int, str]:
     """Scan and skip existing Markdown math spans ($...$ or $$...$$).
 
     Args:
@@ -450,7 +463,7 @@ def read_dollar_math_span(contents: str, start: int) -> tuple[int, str]:
     if delimiter != "$":
         return 0, ""
 
-    fence_length = scan_delimiter_run(contents, start)
+    fence_length = _scan_delimiter_run(contents, start)
 
     if fence_length > 2:
         # This isn't maths
@@ -474,7 +487,7 @@ def read_dollar_math_span(contents: str, start: int) -> tuple[int, str]:
 
         if contents[cursor] == delimiter:
             run_start = cursor
-            run_length = scan_delimiter_run(contents, cursor)
+            run_length = _scan_delimiter_run(contents, cursor)
 
             if run_length == 1 and (
                 contents[cursor - 1] in (" ", "\n", "\t")
@@ -508,10 +521,10 @@ def read_dollar_math_span(contents: str, start: int) -> tuple[int, str]:
         return 0, ""
 
     error_message = "Unterminated display math environment"
-    raise_parsing_error(contents, start, error_message, length=fence_length)
+    _raise_parsing_error(contents, start, error_message, length=fence_length)
 
 
-def read_bracket_math_span(contents: str, start: int) -> tuple[int, str]:
+def _read_bracket_math_span(contents: str, start: int) -> tuple[int, str]:
     if start >= len(contents) - 1:
         return 0, ""
 
@@ -536,10 +549,10 @@ def read_bracket_math_span(contents: str, start: int) -> tuple[int, str]:
     span_type = "inline" if opening == "(" else "display"
     error_message = f"Unterminated {span_type} math environment"
 
-    raise_parsing_error(contents, start, error_message, length=2)
+    _raise_parsing_error(contents, start, error_message, length=2)
 
 
-def read_string_span(contents: str, start: int) -> tuple[int, str]:
+def _read_string_span(contents: str, start: int) -> tuple[int, str]:
     """Scan and return a Python string literal starting at `start`.
 
     Supports single-quoted ('...', "...") and triple-quoted ('''...''', \"\"\"...\"\"\")
@@ -575,7 +588,7 @@ def read_string_span(contents: str, start: int) -> tuple[int, str]:
             error_message = (
                 "Unterminated string literal (newline in single-quoted string)"
             )
-            raise_parsing_error(contents, start, error_message, length=fence_length)
+            _raise_parsing_error(contents, start, error_message, length=fence_length)
 
         if contents[cursor] == delimiter:
             if is_triple:
@@ -590,10 +603,10 @@ def read_string_span(contents: str, start: int) -> tuple[int, str]:
 
     span_type = "multiline string" if is_triple else "string literal"
     error_message = f"Unterminated {span_type}"
-    raise_parsing_error(contents, start, error_message, length=fence_length)
+    _raise_parsing_error(contents, start, error_message, length=fence_length)
 
 
-def read_comment_span(contents: str, start: int) -> tuple[int, str]:
+def _read_comment_span(contents: str, start: int) -> tuple[int, str]:
     """Scan and return an HTML comment span (<!-- ... -->).
 
     Args:
@@ -615,7 +628,7 @@ def read_comment_span(contents: str, start: int) -> tuple[int, str]:
     return end - start, contents[start:end]
 
 
-def find_matching_bracket(
+def _find_matching_bracket(
     contents: str,
     start: int,
     strict: bool = False,
@@ -643,13 +656,13 @@ def find_matching_bracket(
     closing = bracket_map[opening]
 
     span_map = {
-        "'": read_string_span,
-        '"': read_string_span,
-        "`": read_code_span,
-        "~": read_code_span,
-        "$": read_dollar_math_span,
-        "\\": read_bracket_math_span,
-        "<": read_comment_span,
+        "'": _read_string_span,
+        '"': _read_string_span,
+        "`": _read_code_span,
+        "~": _read_code_span,
+        "$": _read_dollar_math_span,
+        "\\": _read_bracket_math_span,
+        "<": _read_comment_span,
     }
 
     depth = 1
@@ -693,13 +706,13 @@ def find_matching_bracket(
         cursor += 1
 
     error_message = f"Unterminated {'double ' if is_double else ''}bracket `{opening}`"
-    raise_parsing_error(contents, start, error_message, length=2 if is_double else 1)
+    _raise_parsing_error(contents, start, error_message, length=2 if is_double else 1)
 
 
 __IDENTIFIER_REGEX = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
 
 
-def get_identifier(contents: str, start: int) -> tuple[int, str]:
+def _get_identifier(contents: str, start: int) -> tuple[int, str]:
     """Extract a Python identifier starting at index `start`.
 
     Args:
@@ -720,7 +733,7 @@ def get_identifier(contents: str, start: int) -> tuple[int, str]:
     return len(identifier), identifier
 
 
-def get_macro(contents: str, start: int) -> tuple[int, str]:
+def _get_macro(contents: str, start: int) -> tuple[int, str]:
     """Extract a Python macro or parenthesized expression starting at index `start`.
 
     Can start with either:
@@ -745,11 +758,11 @@ def get_macro(contents: str, start: int) -> tuple[int, str]:
 
     # 1. Base item: either parenthesized expression or base identifier
     if char == "(":
-        bracket_end = find_matching_bracket(contents, cursor)
+        bracket_end = _find_matching_bracket(contents, cursor)
         macro_str = contents[cursor : bracket_end + 1]
         cursor = bracket_end + 1
     else:
-        length, identifier = get_identifier(contents, cursor)
+        length, identifier = _get_identifier(contents, cursor)
         if length == 0:
             return 0, ""
         macro_str = identifier
@@ -763,7 +776,7 @@ def get_macro(contents: str, start: int) -> tuple[int, str]:
             # Avoid sentence-ending periods or invalid attributes
             if cursor + 1 >= len(contents) or contents[cursor + 1] in (" ", "\t", "\n"):
                 break
-            attr_len, attr_name = get_identifier(contents, cursor + 1)
+            attr_len, attr_name = _get_identifier(contents, cursor + 1)
             if attr_len == 0:
                 break
             cursor += 1 + attr_len
@@ -771,7 +784,7 @@ def get_macro(contents: str, start: int) -> tuple[int, str]:
             continue
 
         if char in ("(", "["):
-            bracket_end = find_matching_bracket(contents, cursor)
+            bracket_end = _find_matching_bracket(contents, cursor)
             macro_str += contents[cursor : bracket_end + 1]
             cursor = bracket_end + 1
             continue
@@ -798,7 +811,7 @@ __FORMAT_SPECIFIER_PATTERN = re.compile(
 )
 
 
-def get_format_specifier(contents: str, start: int) -> tuple[int, str]:
+def _get_format_specifier(contents: str, start: int) -> tuple[int, str]:
     """Extract a Python format specification (e.g. `:.2f`, `:>10`) starting at `start`.
 
     Args:
@@ -831,7 +844,7 @@ def get_format_specifier(contents: str, start: int) -> tuple[int, str]:
 # ==============================================================================
 
 
-def clean_macro(macro: str) -> str:
+def _clean_macro(macro: str) -> str:
     # check if the macro is a single print statement. If it is, strip the
     # `print` function call
 
@@ -839,7 +852,7 @@ def clean_macro(macro: str) -> str:
     if not macro.startswith("print("):
         return macro
 
-    end_bracket = find_matching_bracket(macro, 5)
+    end_bracket = _find_matching_bracket(macro, 5)
     if end_bracket < len(macro) - 1:
         # This is not just a print statement
         return macro
@@ -847,7 +860,7 @@ def clean_macro(macro: str) -> str:
     return macro[6:-1]
 
 
-def format_as_markdown(
+def _format_as_markdown(
     macro: str,
     is_double: bool,
     is_quiet: bool,
@@ -875,7 +888,7 @@ def format_as_markdown(
         Pandoc Markdown string (e.g. ` `` print(a) ``{.py} `).
     """
     if not is_double and not is_quiet:
-        macro = clean_macro(macro)
+        macro = _clean_macro(macro)
         if specifier is not None:
             macro = f"print('{{{specifier}}}'.format({macro}))"
         else:
@@ -895,7 +908,7 @@ def format_as_markdown(
     return f"`` {macro} ``{{{classes_str}}}"
 
 
-def format_block_as_markdown(
+def _format_block_as_markdown(
     block: str,
     is_quiet: bool,
     is_solo: bool = False,
@@ -929,7 +942,7 @@ def format_block_as_markdown(
 # ==============================================================================
 
 
-def read_pyndoc_macro(contents: str, start: int) -> tuple[int, str]:
+def _read_pyndoc_macro(contents: str, start: int) -> tuple[int, str]:
     """Parse inline macros: %var, %%var, %func(...), %%func(...).
 
     Handles optional 'i'/'b' prefix, chained calls/subscripts, format specifiers,
@@ -951,7 +964,7 @@ def read_pyndoc_macro(contents: str, start: int) -> tuple[int, str]:
     if contents[start] != "%":
         return 0, ""
 
-    run_length = scan_delimiter_run(contents, start)
+    run_length = _scan_delimiter_run(contents, start)
 
     if run_length > 2:
         # likely a file input, not a macro
@@ -960,7 +973,7 @@ def read_pyndoc_macro(contents: str, start: int) -> tuple[int, str]:
     is_double = run_length == 2
     cursor = start + run_length
 
-    length, macro = get_macro(contents, cursor)
+    length, macro = _get_macro(contents, cursor)
     if length == 0:
         # misidentified
         return 0, ""
@@ -969,7 +982,7 @@ def read_pyndoc_macro(contents: str, start: int) -> tuple[int, str]:
 
     specifier = None
     if cursor < len(contents) and contents[cursor] == ":":
-        specifier_length, spec = get_format_specifier(contents, cursor)
+        specifier_length, spec = _get_format_specifier(contents, cursor)
         if specifier_length > 0:
             cursor += specifier_length
             specifier = spec
@@ -979,9 +992,9 @@ def read_pyndoc_macro(contents: str, start: int) -> tuple[int, str]:
         cursor += 1
         is_quiet = True
 
-    is_solo = is_only_text_on_line(contents, start, cursor)
+    is_solo = _is_only_text_on_line(contents, start, cursor)
 
-    return cursor - start, format_as_markdown(
+    return cursor - start, _format_as_markdown(
         macro,
         is_double=is_double,
         is_quiet=is_quiet,
@@ -991,15 +1004,15 @@ def read_pyndoc_macro(contents: str, start: int) -> tuple[int, str]:
     )
 
 
-def read_pyndoc_expression(contents: str, start: int) -> tuple[int, str]:
+def _read_pyndoc_expression(contents: str, start: int) -> tuple[int, str]:
     """Parse parenthesized expression macros: %(a == b), %%(a + b).
 
-    Unified with read_pyndoc_macro.
+    Unified with _read_pyndoc_macro.
     """
-    return read_pyndoc_macro(contents, start)
+    return _read_pyndoc_macro(contents, start)
 
 
-def read_pyndoc_block(contents: str, start: int) -> tuple[int, str]:
+def _read_pyndoc_block(contents: str, start: int) -> tuple[int, str]:
     """Parse embedded Python execution blocks: %{ code } or %%{ code }.
 
     Args:
@@ -1015,7 +1028,7 @@ def read_pyndoc_block(contents: str, start: int) -> tuple[int, str]:
     if contents[start] != "%":
         return 0, ""
 
-    run_length = scan_delimiter_run(contents, start)
+    run_length = _scan_delimiter_run(contents, start)
 
     if run_length > 2:
         # likely a file input, not a macro
@@ -1024,20 +1037,20 @@ def read_pyndoc_block(contents: str, start: int) -> tuple[int, str]:
     is_double = run_length == 2
     cursor = start + run_length
 
-    bracket_end = find_matching_bracket(contents, cursor)
+    bracket_end = _find_matching_bracket(contents, cursor)
     # removing the outer braces
     block = contents[cursor + 1 : bracket_end]
     block = block.strip("\n")
     block = deindent(block)
     is_quiet = bracket_end + 1 < len(contents) and contents[bracket_end + 1] == ";"
     cursor = bracket_end + (2 if is_quiet else 1)
-    is_solo = is_only_text_on_line(contents, start, cursor)
-    return cursor - start, format_block_as_markdown(
+    is_solo = _is_only_text_on_line(contents, start, cursor)
+    return cursor - start, _format_block_as_markdown(
         block, is_quiet=is_quiet, is_solo=is_solo, is_double=is_double
     )
 
 
-def read_pyndoc_file(
+def _read_pyndoc_file(
     contents: str,
     start: int,
     target_format: str | None = None,
@@ -1059,7 +1072,7 @@ def read_pyndoc_file(
     if contents[start] != "%":
         return 0, ""
 
-    run_length = scan_delimiter_run(contents, start)
+    run_length = _scan_delimiter_run(contents, start)
 
     if run_length != 3:
         # not a file input
@@ -1077,7 +1090,7 @@ def read_pyndoc_file(
     cursor += length
 
     block_start = cursor + 1
-    block_end = find_matching_bracket(contents, cursor)
+    block_end = _find_matching_bracket(contents, cursor)
     block = contents[block_start:block_end].strip()
     cursor = block_end + 1
 
@@ -1090,7 +1103,7 @@ def read_pyndoc_file(
 
     match file_type:
         case "py":
-            formatted_block = include_py_file(
+            formatted_block = _include_py_file(
                 block,
                 contents,
                 block_start,
@@ -1099,7 +1112,7 @@ def read_pyndoc_file(
                 is_quiet=is_quiet,
             )
         case "md":
-            formatted_block = include_md_file(
+            formatted_block = _include_md_file(
                 block,
                 contents,
                 block_start,
@@ -1108,7 +1121,7 @@ def read_pyndoc_file(
                 is_quiet=is_quiet,
             )
         case "mddir":
-            formatted_block = include_md_dir(
+            formatted_block = _include_md_dir(
                 block,
                 contents,
                 block_start,
@@ -1117,7 +1130,7 @@ def read_pyndoc_file(
                 is_quiet=is_quiet,
             )
         case "mdifformat":
-            formatted_block = include_md_conditional_file(
+            formatted_block = _include_md_conditional_file(
                 block,
                 contents,
                 block_start,
@@ -1126,7 +1139,7 @@ def read_pyndoc_file(
                 is_quiet=is_quiet,
             )
         case _:
-            raise_parsing_error(
+            _raise_parsing_error(
                 contents,
                 start + 3,
                 "Unrecognised file directive",
@@ -1136,7 +1149,7 @@ def read_pyndoc_file(
     return cursor - start, formatted_block
 
 
-def include_py_file(
+def _include_py_file(
     filename: str,
     contents: str,
     start: int,
@@ -1149,7 +1162,7 @@ def include_py_file(
     filename = filename.replace("{format}", target_fmt)
     filepath = Path(filename)
     if not filepath.exists():
-        raise_parsing_error(
+        _raise_parsing_error(
             contents,
             start,
             "Python file does not exist",
@@ -1157,7 +1170,7 @@ def include_py_file(
             FileNotFoundError,
         )
     if not filepath.is_file():
-        raise_parsing_error(
+        _raise_parsing_error(
             contents,
             start,
             "Filepath exists but is not a file",
@@ -1174,7 +1187,7 @@ def include_py_file(
     return f"`` {filepath.absolute()} ``{{{classes_str}}}"
 
 
-def include_md_file(
+def _include_md_file(
     filename: str,
     contents: str,
     start: int,
@@ -1200,7 +1213,7 @@ def include_md_file(
     filepath = Path(filename)
 
     if not filepath.exists():
-        raise_parsing_error(
+        _raise_parsing_error(
             contents,
             start,
             f"Markdown file does not exist: '{filename}'",
@@ -1208,7 +1221,7 @@ def include_md_file(
             FileNotFoundError,
         )
     if not filepath.is_file():
-        raise_parsing_error(
+        _raise_parsing_error(
             contents,
             start,
             f"Filepath exists but is not a file: '{filename}'",
@@ -1223,7 +1236,7 @@ def include_md_file(
     return "" if is_quiet else file_contents
 
 
-def include_md_dir(
+def _include_md_dir(
     dirname: str,
     contents: str,
     start: int,
@@ -1252,7 +1265,7 @@ def include_md_dir(
     dirpath = Path(dirname)
 
     if not dirpath.exists():
-        raise_parsing_error(
+        _raise_parsing_error(
             contents,
             start,
             f"Markdown directory does not exist: '{dirname}'",
@@ -1260,7 +1273,7 @@ def include_md_dir(
             FileNotFoundError,
         )
     if not dirpath.is_dir():
-        raise_parsing_error(
+        _raise_parsing_error(
             contents,
             start,
             f"Filepath exists but is not a directory: '{dirname}'",
@@ -1279,7 +1292,7 @@ def include_md_dir(
         return ""
 
     processed_sections = [
-        include_md_file(
+        _include_md_file(
             str(p),
             contents,
             start,
@@ -1293,7 +1306,7 @@ def include_md_dir(
     return "\n\n".join(processed_sections)
 
 
-def include_md_conditional_file(
+def _include_md_conditional_file(
     filename: str,
     contents: str,
     start: int,
@@ -1325,7 +1338,7 @@ def include_md_conditional_file(
 
     for option in raw_options:
         if ":" not in option:
-            raise_parsing_error(
+            _raise_parsing_error(
                 contents,
                 start,
                 f"Invalid conditional format specification '{option}'. Expected 'format: path'",
@@ -1337,7 +1350,7 @@ def include_md_conditional_file(
         file_path_str = path_part.strip()
 
         if target in formats:
-            return include_md_file(
+            return _include_md_file(
                 file_path_str,
                 contents,
                 start,
@@ -1401,7 +1414,7 @@ def preprocess(
 
         # 1. HTML Comments (stripped from output)
         if char == "<":
-            consumed, _ = read_comment_span(contents, cursor)
+            consumed, _ = _read_comment_span(contents, cursor)
             if consumed > 0:
                 cursor += consumed
                 continue
@@ -1411,7 +1424,7 @@ def preprocess(
 
         # 2. Escaped characters and bracket math
         if char == "\\":
-            consumed, math_text = read_bracket_math_span(contents, cursor)
+            consumed, math_text = _read_bracket_math_span(contents, cursor)
             if consumed > 0:
                 output.write(math_text)
                 cursor += consumed
@@ -1427,7 +1440,7 @@ def preprocess(
 
         # 3. Markdown code spans & fenced blocks
         if char in ("`", "~"):
-            consumed, code_text = read_code_span(contents, cursor)
+            consumed, code_text = _read_code_span(contents, cursor)
             if consumed > 0:
                 output.write(code_text)
                 cursor += consumed
@@ -1438,7 +1451,7 @@ def preprocess(
 
         # 4. Math spans ($...$ or $$...$$)
         if char == "$":
-            consumed, math_text = read_dollar_math_span(contents, cursor)
+            consumed, math_text = _read_dollar_math_span(contents, cursor)
             if consumed > 0:
                 output.write(math_text)
                 cursor += consumed
@@ -1449,9 +1462,9 @@ def preprocess(
 
         # 5. Pyndoc directives (%)
         if char == "%":
-            run_length = scan_delimiter_run(contents, cursor)
+            run_length = _scan_delimiter_run(contents, cursor)
             if run_length == 3:
-                consumed, rep = read_pyndoc_file(contents, cursor, target_format)
+                consumed, rep = _read_pyndoc_file(contents, cursor, target_format)
                 if consumed > 0:
                     output.write(rep)
                     cursor += consumed
@@ -1459,13 +1472,13 @@ def preprocess(
             elif run_length in (1, 2):
                 after_percent = cursor + run_length
                 if after_percent < total_len and contents[after_percent] == "{":
-                    consumed, rep = read_pyndoc_block(contents, cursor)
+                    consumed, rep = _read_pyndoc_block(contents, cursor)
                     if consumed > 0:
                         output.write(rep)
                         cursor += consumed
                         continue
                 else:
-                    consumed, rep = read_pyndoc_macro(contents, cursor)
+                    consumed, rep = _read_pyndoc_macro(contents, cursor)
                     if consumed > 0:
                         output.write(rep)
                         cursor += consumed

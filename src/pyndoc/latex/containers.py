@@ -62,16 +62,19 @@ class Sequence(_Container):
 
 
 class Bracket(_Container):
+    """A bracketed expression, such as `(a + b)`.
+
+    Parameters
+    ----------
+    *children : str | float | Token
+        The child expressions to enclose in brackets.
+    scale : bool, optional
+        If True, the brackets will be scaled to fit the contents. Default False
+    """
+
     def __init__(
         self, *children: str | float | Token, scale: bool = False
     ) -> None:
-        """A bracketed expression, such as `(a + b)`.
-
-        Parameters
-        ----------
-        scale : bool, optional
-            If True, the brackets will be scaled to fit the contents. Default False
-        """
         super().__init__(*children)
         self.scale = scale
         self.left_bracket = "("
@@ -88,40 +91,44 @@ class Bracket(_Container):
 
 
 class SquareBracket(Bracket):
+    """A square bracketed expression, such as `[a + b]`."""
+
     def __init__(
         self, *children: str | float | Token, scale: bool = False
     ) -> None:
-        """A square bracketed expression, such as `[a + b]`."""
         super().__init__(*children, scale=scale)
         self.left_bracket = "["
         self.right_bracket = "]"
 
 
 class CurlyBracket(Bracket):
+    """A curly bracketed/braced expression, such as `{a + b}`."""
+
     def __init__(
         self, *children: str | float | Token, scale: bool = False
     ) -> None:
-        """A curly bracketed/braced expression, such as `{a + b}`."""
         super().__init__(*children, scale=scale)
         self.left_bracket = "\\lbrace"
         self.right_bracket = "\\rbrace"
 
 
 class AngleBracket(Bracket):
+    """An angle bracketed expression, such as `<a + b>`."""
+
     def __init__(
         self, *children: str | float | Token, scale: bool = False
     ) -> None:
-        """An angle bracketed expression, such as `<a + b>`."""
         super().__init__(*children, scale=scale)
         self.left_bracket = "\\langle"
         self.right_bracket = "\\rangle"
 
 
 class AbsoluteValue(Bracket):
+    """An absolute value expression, such as `|a + b|`."""
+
     def __init__(
         self, *children: str | float | Token, scale: bool = False
     ) -> None:
-        """An absolute value expression, such as `|a + b|`."""
         super().__init__(*children, scale=scale)
         self.left_bracket = "|"
         self.right_bracket = "|"
@@ -149,10 +156,11 @@ class AbsoluteValue(Bracket):
 
 
 class Norm(Bracket):
+    r"""A norm expression, such as `\|a + b\|`."""
+
     def __init__(
         self, *children: str | float | Token, scale: bool = False
     ) -> None:
-        r"""A norm expression, such as `\|a + b\|`."""
         super().__init__(*children, scale=scale)
         self.left_bracket = "\\|"
         self.right_bracket = "\\|"
@@ -180,10 +188,11 @@ class Norm(Bracket):
 
 
 class Floor(Bracket):
+    r"""A floor expression, such as `\lfloor a \rfloor`."""
+
     def __init__(
         self, *children: str | float | Token, scale: bool = False
     ) -> None:
-        r"""A floor expression, such as `\lfloor a \rfloor`."""
         super().__init__(*children, scale=scale)
         self.left_bracket = "\\lfloor"
         self.right_bracket = "\\rfloor"
@@ -211,10 +220,11 @@ class Floor(Bracket):
 
 
 class Ceil(Bracket):
+    r"""A ceiling expression, such as `\lceil a \rceil`."""
+
     def __init__(
         self, *children: str | float | Token, scale: bool = False
     ) -> None:
-        r"""A ceiling expression, such as `\lceil a \rceil`."""
         super().__init__(*children, scale=scale)
         self.left_bracket = "\\lceil"
         self.right_bracket = "\\rceil"
@@ -242,6 +252,8 @@ class Ceil(Bracket):
 
 
 class MixedBracket(Bracket):
+    """A mixed bracketed expression, such as `[0, 1)`."""
+
     __bracket_shorthands = {
         "<": "\\langle",
         ">": "\\rangle",
@@ -254,7 +266,6 @@ class MixedBracket(Bracket):
         *children: str | float | Token,
         scale: bool = False,
     ) -> None:
-        """A mixed bracketed expression, such as `[0, 1)`."""
         super().__init__(*children, scale=scale)
         self.left_bracket = self.__bracket_shorthands.get(str(left), str(left))
         self.right_bracket = self.__bracket_shorthands.get(str(right), str(right))

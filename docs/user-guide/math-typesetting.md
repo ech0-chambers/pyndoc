@@ -10,14 +10,18 @@ Pyndoc circumvents this limitation by providing a Python-based AST where express
 
 ```markdown {.example title="Pythagorean Theorem"}
 %{
-a, b = tex.symbols("a = 3 cm; b = 4 cm")
-c = tex.var("c", tex.sqrt(a**2 + b**2), fmt=".0f", unit="cm")
+    a, b = tex.symbols("a = 3 cm; b = 4 cm")
+    c = tex.var("c", tex.sqrt(a**2 + b**2), fmt=".0f", unit="cm")
 };
 
-For legs %%(a == a()) and %%(b == b()), the hypotenuse is:
+For lengths %%(a == a()) and %%(b == b()), the hypotenuse is:
 
-%%md.equation(
-    (c == tex.sqrt(a()**2 + b()**2)) == c()
+%%tex.split(
+    [
+        [c, c.expand],
+        [c.expand()],
+        [c()]
+    ]
 )
 ```
 
@@ -66,31 +70,35 @@ alpha = tex.sym(r"\alpha")
 
 A `Quantity` pairs a numeric scalar with an optional unit (via Pint) and format specifier:
 
-```python
+```python {.quiet}
 q = tex.Quantity(9.80665, fmt=".2f", unit="m / s^2")
 ```
 
 Calling a `Quantity` evaluates and formats its value for typesetting:
-- `q()` $\to$ `9.81\ \mathrm{m}\:\mathrm{s}^{-2}`
-- `q(fmt=".4f")` $\to$ `9.8067\ \mathrm{m}\:\mathrm{s}^{-2}`
-- `q(unit="ft / s^2")` $\to$ `32.17\ \mathrm{ft}\:\mathrm{s}^{-2}`
+
+- `%%q()`{.example}
+- `%%q(fmt=".4f")`{.example}
+- `%%q(unit="ft / s^2")`{.example}
 
 ### `Variable` (`var`)
 
 A `Variable` combines a symbol representation with an underlying `Quantity`:
 
-```python
+```python {.quiet}
 hbar = tex.var(r"\hbar", 1.0545718e-34, fmt=".3e", unit="kg m^2 / s")
 ```
 
-- When used directly in expressions (`hbar`), it renders its symbol: `\hbar` ($\hbar$).
-- When called (`hbar()`), it formats and renders its evaluated numeric quantity: `$1.055 \times 10^{-34}\ \mathrm{kg}\:\mathrm{m}^2\:\mathrm{s}^{-1}$`.
+This can be used in equations or text as a symbol or its value.
+
+- When used directly in expressions, it renders its symbol: `%%hbar`{.example}.
+- When called, it formats and renders its evaluated numeric quantity: `%%hbar()`{.example}.
+
 
 ### Multi-variable Declarations (`symbols`)
 
 The `symbols()` function parses compact variable declarations separated by semicolons or newlines:
 
-```python
+```python {.quiet}
 tex.symbols("""
     a = 3 cm;
     b = 4 cm;
@@ -120,14 +128,100 @@ height = tex.Quantity(5.0, unit="cm")
 area = width * height  # Resulting quantity has compatible area units
 ```
 
-## Configuration
+## Expression Expansion
 
-Default formatting and typesetting options can be configured globally or temporarily via `latex_config()`:
+When defining variables from formulas, such as `t = tex.var("t", tex.sqrt(2 * h / g))`, Pyndoc retains the defining expression AST. You can expand the variable during typesetting without duplicating the formula:
+
+| Syntax | Description | Example ($c = b^2 + 10$ where $b = 2a$) |
+| :--- | :--- | :--- |
+| `v.expand` | Single-layer symbolic expansion | $b^2 + 10$ |
+| `v.expand()` | Single-layer evaluated expansion (substituting child variable values) | $6^2 + 10$ |
+| `v.expand_to(depth)` | Expand expression up to `depth` levels (returns a callable token) | $c.\text{expand\_to}(2) \to (2a)^2 + 10$ |
+| `v.expand_all` | Multi-layer recursive symbolic expansion down to atomic variables | $(2a)^2 + 10$ |
+| `v.expand_all()` | Multi-layer recursive evaluated expansion down to atomic variable values | $(2 \times 3)^2 + 10$ |
+| `v()` | Final evaluated quantity | $46$ |
+
+### Complete Derivation Chains
+
+Combining `.expand`, `.expand()`, and `()` with chained equalities produces complete mathematical derivations with zero copy-pasting:
+
+```{.example title="Derivation Chaining"}
+%{
+    g = tex.var("g", 9.80665, fmt=".2f", unit="m / s^2")
+    h = tex.var("h", 45.0, fmt=".1f", unit="m")
+    t = tex.var("t", tex.sqrt(2 * h / g))
+};
+
+%%tex.split(
+    [
+        [t, t.expand],
+        [t.expand()], 
+        [t()]
+    ]
+)
+```
+
+### Selective Expansion (`expandable` and `no_expand`)
+
+You can control whether intermediate variables are expanded in two ways:
+
+1. **The `expandable` Flag**:
+    When declaring a variable, set `expandable=False` (default is `True`) to treat it as atomic during all expansions:
+    ```python {.quiet}
+    a = tex.var("a", 3)
+    b = tex.var("b", 2 * a)
+    c = tex.var("c", b**2 + 10)
+    ```
+    By default, expressions will be expanded until they can't be expanded any further: `%%(c == c.expand_all)`{.example}, and with evaluation, `%%(c == c.expand_all())`{.example}. This can be disabled at any point:
+
+    ```python {.quiet}
+    b.expandable = False
+    ```
+    Now, expansion stops at `b`, leaving `b` symbolic: `%%(c == c.expand_all)`{.example}, and with evaluation, `%%(c == c.expand_all())`{.example}.
+
+    You can also toggle `b.expandable = True` or `False` dynamically at any time, or pass it as a keyword argument to `tex.var`.
+
+2. **The `no_expand` Parameter on `expand_to`**:
+    Supply a list of variables (or a single variable) to `.expand_to(depth, no_expand=[...])`. Any matching variable will not be expanded, regardless of its `.expandable` setting:
+    ```markdown {.example}
+    %{
+        b.expandable = True
+    }
+    Passing `depth = None` triggers full expansion, equivalent to `expand_all`: %%(c == c.expand_to(None, no_expand = [b])). This also works with evaluation: %%(c == c.expand_to(None, no_expand = [b])()).
+    ```
+
+### Formatting Overrides
+
+You can temporarily override format specifiers during evaluation by passing `fmt`:
 
 ```python
-with tex.latex_config(multiplication_operator=r"\cdot", default_format=".3f"):
+# Formats all substituted values in the expansion to 3 decimal places
+expr = t.expand(fmt=".3f")
+```
+
+### Multiplication Display
+
+When an expression is evaluated with concrete numerical operands (such as `2 * h()`), Pyndoc automatically formats the multiplication with the configured operator ($2 \times 45.0\ \mathrm{m}$) rather than juxtaposition ($2\ 45.0\ \mathrm{m}$). You can choose between `\times` and `\cdot` globally or temporarily via `latex_config(multiplication_operator=tex.MultiplicationOperator.CDOT)` (or using string shorthand `"cdot"`).
+
+## Configuration
+
+Default formatting and typesetting options can be configured globally or temporarily via `latex_config()`. Supported options include `MultiplicationOperator` and `BracketType` enums (with friendly string coercion):
+
+```python
+with tex.latex_config(
+    multiplication_operator=tex.MultiplicationOperator.CDOT,
+    array_index_bracket_type=tex.BracketType.SQUARE,
+    default_format=".3f",
+):
     expr = tex.sym("x") @ tex.sym("y")  # Renders using \cdot instead of \times
 ```
+
+Available `BracketType` options:
+- `BracketType.SQUARE` (`"square"`, `[` `]`)
+- `BracketType.ROUND` (`"round"`, `(` `)`)
+- `BracketType.CURLY` (`"curly"`, `\{` `\}`)
+- `BracketType.ANGLE` (`"angle"`, `\langle` `\rangle`)
+- `BracketType.ABSOLUTE` (`"absolute"`, `|` `|`)
 
 ## Key Quirks to Note
 

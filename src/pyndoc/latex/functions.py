@@ -37,9 +37,14 @@ class NthRoot(CallableToken):
 
     @property
     def value(self) -> Any:
-        expr_val = getattr(self.expr, "value", self.expr)
-        root_val = getattr(self.root, "value", self.root)
-        return expr_val ** (1 / root_val)
+        try:
+            expr_val = getattr(self.expr, "value", self.expr)
+            root_val = getattr(self.root, "value", self.root)
+            if expr_val is None or root_val is None:
+                return None
+            return expr_val ** (1 / root_val)
+        except (TypeError, ValueError, ZeroDivisionError):
+            return None
 
     def __call__(self, *args: Any, **kwargs: Any) -> Literal:
         val = self.value

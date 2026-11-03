@@ -203,11 +203,36 @@ class BooleanLiteral(Literal):
         super().__init__(str(value))
         self.value: bool = bool(value)
 
+    def __bool__(self) -> bool:
+        return self.value
+
     def __str__(self) -> str:
         return f"\\mathrm{{{self.value}}}"
 
-    def __bool__(self) -> bool:
-        return self.value
+
+def _is_numerical_display(operand: Any) -> bool:
+    """Check if an operand represents a concrete numerical display value."""
+    if operand is None:
+        return False
+    if getattr(operand, "_is_symbolic_variable", False):
+        return False
+    if getattr(operand, "_is_quantity", False):
+        return True
+    if isinstance(operand, (int, float, complex, pint.Quantity)):
+        return True
+    if isinstance(operand, DimensionedLiteral):
+        return True
+    if isinstance(operand, Literal):
+        val = operand.value
+        if isinstance(val, (int, float, complex, pint.Quantity)):
+            return True
+        if isinstance(val, str):
+            try:
+                float(val.strip())
+                return True
+            except ValueError:
+                return False
+    return False
 
 
 class CallableToken(Token, ABC):
@@ -625,7 +650,19 @@ class Multiplication(_BinaryOperator):
         self, left: TokenLike, right: TokenLike
     ) -> None:
         super().__init__(left, right)
-        self.symbol = ""
+        self._custom_symbol: str | None = None
+
+    @property
+    def symbol(self) -> str:
+        if self._custom_symbol is not None:
+            return self._custom_symbol
+        if _is_numerical_display(self.left) and _is_numerical_display(self.right):
+            return ACTIVE_CONFIG.multiplication_operator
+        return ""
+
+    @symbol.setter
+    def symbol(self, value: str | None) -> None:
+        self._custom_symbol = value
 
     def _operation(self, left: Any, right: Any) -> Any:
         return left * right

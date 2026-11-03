@@ -231,6 +231,11 @@ class TestLists:
         assert md.Enumeration.ROMAN_LOWER == "LowerRoman"
         assert md.ListDelimiter.PERIOD == "Period"
         assert md.ListDelimiter.TWO_PAREN == "TwoParens"
+        assert md.ListType.BULLET == "bullet"
+        assert md.ListType.ORDERED == "ordered"
+        assert md.ListType.DEFINITION == "definition"
+        assert md.ListType.UNORDERED == "bullet"
+        assert md.ListType.UNORDERED is md.ListType.BULLET
 
     def test_definition_list(self):
         dl = md.definition_list({
@@ -239,6 +244,123 @@ class TestLists:
         })
         assert isinstance(dl, pf.DefinitionList)
         assert len(dl.content) == 2
+
+    def test_ordered_list_inner_defaults_to_ordered(self):
+        ol = md.ordered_list([
+            "First item",
+            ("Second item", ["First Subitem", "Second Subitem"]),
+            "Third item",
+        ])
+        assert isinstance(ol, pf.OrderedList)
+        assert len(ol.content) == 3
+        second_item = ol.content[1]
+        assert isinstance(second_item, pf.ListItem)
+        sublists = [b for b in second_item.content if isinstance(b, pf.OrderedList)]
+        assert len(sublists) == 1
+        assert isinstance(sublists[0], pf.OrderedList)
+        assert len(sublists[0].content) == 2
+
+    def test_ordered_list_inner_list_type_override(self):
+        ol = md.ordered_list(
+            ["First item", ("Second item", ["Sub A", "Sub B"])],
+            inner_list_type=md.ListType.BULLET,
+        )
+        second_item = ol.content[1]
+        sublists = [b for b in second_item.content if isinstance(b, pf.BulletList)]
+        assert len(sublists) == 1
+        assert isinstance(sublists[0], pf.BulletList)
+
+        # Also support string "bullet"
+        ol_str = md.ordered_list(
+            ["First item", ("Second item", ["Sub A", "Sub B"])],
+            inner_list_type="bullet",
+        )
+        sublists_str = [b for b in ol_str.content[1].content if isinstance(b, pf.BulletList)]
+        assert len(sublists_str) == 1
+
+    def test_ordered_list_deeply_nested(self):
+        ol = md.ordered_list([
+            "1",
+            ("2", [
+                "2.1",
+                ("2.2", ["2.2.1", "2.2.2"]),
+            ]),
+        ])
+        item_2 = ol.content[1]
+        sublist_lvl1 = next(b for b in item_2.content if isinstance(b, pf.OrderedList))
+        item_2_2 = sublist_lvl1.content[1]
+        sublist_lvl2 = next(b for b in item_2_2.content if isinstance(b, pf.OrderedList))
+        assert isinstance(sublist_lvl2, pf.OrderedList)
+        assert len(sublist_lvl2.content) == 2
+
+    def test_bullet_list_inner_list_type_override(self):
+        bl = md.bullet_list(
+            ["First item", ("Second item", ["Sub 1", "Sub 2"])],
+            inner_list_type=md.ListType.ORDERED,
+        )
+        assert isinstance(bl, pf.BulletList)
+        second_item = bl.content[1]
+        sublists = [b for b in second_item.content if isinstance(b, pf.OrderedList)]
+        assert len(sublists) == 1
+        assert isinstance(sublists[0], pf.OrderedList)
+
+        # Unordered alias with string "ordered"
+        ul = md.unordered_list(
+            ["First item", ("Second item", ["Sub 1", "Sub 2"])],
+            inner_list_type="ordered",
+        )
+        sublists_ul = [b for b in ul.content[1].content if isinstance(b, pf.OrderedList)]
+        assert len(sublists_ul) == 1
+
+    def test_list_item_inner_list_type(self):
+        # Default standalone list_item creates BulletList
+        li_default = md.list_item(("Parent", ["Child 1", "Child 2"]))
+        assert any(isinstance(b, pf.BulletList) for b in li_default.content)
+
+        # Explicit inner_list_type=ORDERED creates OrderedList
+        li_ordered = md.list_item(
+            ("Parent", ["Child 1", "Child 2"]),
+            inner_list_type=md.ListType.ORDERED,
+        )
+        assert any(isinstance(b, pf.OrderedList) for b in li_ordered.content)
+
+        # Standalone collection passed as item
+        li_collection = md.list_item(
+            ["Child 1", "Child 2"],
+            inner_list_type=md.ListType.ORDERED,
+        )
+        assert any(isinstance(b, pf.OrderedList) for b in li_collection.content)
+
+    def test_definition_list_with_inner_list_type(self):
+        dl = md.definition_list(
+            {"Term": ("Header", ["Step 1", "Step 2"])},
+            inner_list_type=md.ListType.ORDERED,
+        )
+        assert isinstance(dl, pf.DefinitionList)
+        def_item = dl.content[0]
+        # definitions contain blocks for Header and OrderedList
+        blocks = def_item.definitions[0].content
+        assert any(isinstance(b, pf.OrderedList) for b in blocks)
+
+    def test_invalid_inner_list_type_raises(self):
+        with pytest.raises(PanfluteValueError) as exc_info:
+            md.ordered_list(["1"], inner_list_type="nonexistent")
+        assert "inner_list_type" in str(exc_info.value)
+
+        with pytest.raises(PanfluteValueError):
+            md.bullet_list(["1"], inner_list_type=999)
+
+        with pytest.raises(PanfluteValueError):
+            md.list_item("1", inner_list_type="invalid_type")
+
+    def test_enumeration_and_delimiter_alias_resolution(self):
+        ol = md.ordered_list(
+            ["1"],
+            enumeration="arabic",
+            delimiter="two_parens",
+        )
+        assert ol.style == "Decimal"
+        assert ol.delimiter == "TwoParens"
 
 
 class TestTables:

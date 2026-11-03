@@ -6,18 +6,18 @@ Pyndoc includes a build-time preprocessor that expands compact `%` directives in
 
 When writing documents with dynamic Python content, standard Pandoc code attributes can quickly become verbose:
 
-```markdown
-`x = 25`{.py .quiet} The square root of `print(x)`{.py} is `print(math.sqrt(x))`{.py}.
+```markdown {.example title="Pure Markdown Syntax"}
+`x = 25`{.py .quiet} The square root of `print(x)`{.py} is `import math; print(math.sqrt(x))`{.py}.
 ```
 
 With the preprocessor enabled, the same document is written concisely:
 
 ```markdown {.example title="Inline Directives"}
 %{
-import math
-x = 25
+    import math
+    x = 25
 };
-The square root of %x is %(math.sqrt(x)).
+The square root of %x is %math.sqrt(x).
 ```
 
 The preprocessor also enables features not available in standard Pandoc filters, such as recursive Markdown file inclusion and format-conditional document branching.
@@ -45,26 +45,26 @@ The preprocessor also enables features not available in standard Pandoc filters,
 Multi-line Python code blocks use bracketed directive syntax:
 
 * **Single Block (`%{...}`)**: Emits a fenced code block with class `{.py}`. Standard output produced within the block is inserted into the document:
-  ```markdown
+  ```markdown {.example}
   %{
-  import numpy as np
-  data = np.random.normal(0, 1, 1000)
-  print(f"Sample variance: {data.var():.4f}")
+    import numpy as np
+    data = np.random.normal(0, 1, 1000)
+    print(f"Sample variance: {data.var():.4f}")
   }
   ```
 * **Double Block (`%%{...}`)**: Emits an AST block with class `{.py-md}`. The final expression or returned element is inserted directly into the Pandoc AST:
   ```markdown {.example title="Dynamic Markdown Table"}
   %%{
-  import pyndoc.markdown as md
-  md.table([["Item", "Quantity"], ["Apples", 12], ["Oranges", 7]])
+    import pyndoc.markdown as md
+    md.table([["Item", "Quantity"], ["Apples", 12], ["Oranges", 7]])
   }
   ```
 * **Quiet Block (`%{...};` or `%%{...};`)**: Appending a semicolon to the closing brace suppresses all output, making it ideal for imports and data preparation:
   ```markdown
   %{
-  import pandas as pd
-  df = pd.read_csv("measurements.csv")
-  total_count = len(df)
+    import pandas as pd
+    df = pd.read_csv("measurements.csv")
+    total_count = len(df)
   };
   ```
 

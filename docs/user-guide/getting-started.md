@@ -37,20 +37,20 @@ Create a file named `report.md`:
 # Physics Lab Summary
 
 %{
-# Set up physical parameters and formulas
-g = tex.var("g", 9.80665, fmt=".2f", unit="m / s^2")
-height = tex.var("h", 45.0, fmt=".1f", unit="m")
-t = tex.var("t", tex.sqrt(2 * height / g))
+    # Set up physical parameters and formulas
+    g = tex.var("g", 9.80665, fmt=".2f", unit="m / s^2")
+    height = tex.var("h", 45.0, fmt=".1f", unit="m")
+    t = tex.var("t", tex.sqrt(2 * height / g))
 };
 
 An object dropped from a height of %%height() experiences an acceleration of %%g().
 
-The total time of flight is given by %%(t == tex.sqrt(2 * height / g)), so 
+The total time of flight is given by %%(t == t.expand), so:
 
 %%md.equation(tex.split(
     [
-        [t, tex.sqrt(2 * height / g)],
-        [tex.sqrt(2 @ height() / g())],
+        [t, t.expand],
+        [t.expand()],
         [t()]
     ]
 ))

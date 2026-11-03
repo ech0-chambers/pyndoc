@@ -5,7 +5,7 @@ import math
 from abc import ABC, abstractmethod
 from typing import Any
 
-from .config import ACTIVE_CONFIG
+from .config import ACTIVE_CONFIG, BracketType
 from .core import (
     CallableToken,
     Concatenation,
@@ -277,12 +277,12 @@ class ArrayIndex(Token):
         array: str | Token,
         *index: str | Token,
         separate: bool | None = None,
-        bracket_type: str | None = None,
+        bracket_type: BracketType | str | None = None,
     ):
         self.array = texttt(array) if isinstance(array, str) else as_token(array)
         self.index = [texttt(i) if isinstance(i, str) else as_token(i) for i in index]
         self._separate = separate
-        self._bracket_type = bracket_type
+        self._bracket_type = BracketType(bracket_type) if bracket_type is not None else None
 
     @property
     def separate(self) -> bool:
@@ -295,26 +295,18 @@ class ArrayIndex(Token):
         self._separate = value
 
     @property
-    def bracket_type(self) -> str:
+    def bracket_type(self) -> BracketType:
         if self._bracket_type is not None:
             return self._bracket_type
         return ACTIVE_CONFIG.array_index_bracket_type
 
     @bracket_type.setter
-    def bracket_type(self, value: str | None) -> None:
-        self._bracket_type = value
+    def bracket_type(self, value: BracketType | str | None) -> None:
+        self._bracket_type = BracketType(value) if value is not None else None
 
     def __str__(self) -> str:
         output = [self.array]
-        bracket_types = {
-            "square": ("[", "]"),
-            "curly": ("\\{", "\\}"),
-            "angle": ("\\langle", "\\rangle"),
-            "absolute": ("|", "|"),
-            "round": ("(", ")"),
-            "paren": ("(", ")"),
-        }
-        raw_delims = bracket_types.get(self.bracket_type, ("[", "]"))
+        raw_delims = self.bracket_type.delimiters
         delim_macros = (
             Macro("texttt", raw_delims[0]),
             Macro("texttt", raw_delims[1]),

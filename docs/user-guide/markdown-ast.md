@@ -41,15 +41,22 @@ Alignments can be passed as strings (`"left"`, `"right"`, `"center"`, `"default"
 
 ## Lists & Sublists
 
-Constructing nested and formatted lists is supported through list helpers:
+Constructing nested and formatted lists is supported through intuitive list helpers. Nested sublists can be passed directly as `(parent_label, [child_items])` pairs, and their type automatically defaults to match the parent list's type (e.g. nested lists in an `ordered_list` default to ordered sublists).
+
+### List Type Control (`inner_list_type` & `ListType`)
+
+All list constructors and [`list_item`](file:///home/echo/Documents/python_github/pyndoc/src/pyndoc/markdown/lists.py) accept an optional `inner_list_type` parameter taking a [`ListType`](file:///home/echo/Documents/python_github/pyndoc/src/pyndoc/markdown/lists.py) enum (`ListType.BULLET`, `ListType.ORDERED`, `ListType.DEFINITION`, or string equivalents `"bullet"`, `"ordered"`, etc.). When `None`, nested sublists inherit the parent list's type:
+
+- [`ordered_list`](file:///home/echo/Documents/python_github/pyndoc/src/pyndoc/markdown/lists.py) defaults inner lists to `ListType.ORDERED`.
+- [`bullet_list`](file:///home/echo/Documents/python_github/pyndoc/src/pyndoc/markdown/lists.py) defaults inner lists to `ListType.BULLET`.
+- [`definition_list`](file:///home/echo/Documents/python_github/pyndoc/src/pyndoc/markdown/lists.py) defaults inner lists to `ListType.DEFINITION`.
 
 ### Bullet Lists (`bullet_list` / `unordered_list`)
 
 ```python
 md.bullet_list([
     "Item 1",
-    "Item 2 with sublist:",
-    md.bullet_list(["Subitem A", "Subitem B"]),
+    ("Item 2 with sublist", ["Subitem A", "Subitem B"]),
     "Item 3",
 ])
 ```
@@ -57,9 +64,26 @@ md.bullet_list([
 ### Ordered Lists (`ordered_list`)
 
 ```python
+md.ordered_list([
+    "Step 1: Install",
+    ("Step 2: Configure", [
+        "Create configuration file",
+        "Set environment variables",
+    ]),
+    "Step 3: Run",
+])
+```
+
+To nest bullet lists inside an ordered list, specify `inner_list_type`:
+
+```python
 md.ordered_list(
-    items=["Step 1: Install", "Step 2: Configure", "Step 3: Run"],
-    start=1,
+    [
+        "Step 1: Install",
+        ("Step 2: Dependencies", ["Python >= 3.11", "Pandoc >= 3.0"]),
+        "Step 3: Run",
+    ],
+    inner_list_type=md.ListType.BULLET,
 )
 ```
 
@@ -69,7 +93,8 @@ md.ordered_list(
 md.definition_list({
     "Term A": "Definition of Term A",
     "Term B": ["First definition", "Second alternative definition"],
-})
+    "Term C": ("Steps", ["Step 1", "Step 2"]),
+}, inner_list_type=md.ListType.ORDERED)
 ```
 
 ## Block Elements

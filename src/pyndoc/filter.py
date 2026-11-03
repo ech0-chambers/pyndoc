@@ -178,9 +178,12 @@ def handle_element(
     if "quiet" in classes:
         return []
 
-    # If the expression returned a tex.Token (or Quantity/Variable), convert to inline math
+    # If the expression returned a tex.Token (or Quantity/Variable), convert to math
     if isinstance(result, tex.Token):
-        result = md.inline_math(result)
+        if (element_type == panflute.CodeBlock or "block" in classes) and "inline" not in classes:
+            result = md.equation(result)
+        else:
+            result = md.inline_math(result)
 
     # If it's a single-element list containing an element, extract it
     if (

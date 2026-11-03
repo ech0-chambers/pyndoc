@@ -2,7 +2,7 @@
 
 import re
 
-from .core import Macro, Token, as_token
+from .core import Macro, Token, Environment, as_token
 
 
 def sanitise_latex_text(text_val: str) -> str:
@@ -136,7 +136,7 @@ def split(
     lines: list[str | Token | tuple[str | Token, ...]],
     environment: str = "split",
     separator: str | None = "=",
-) -> str:
+) -> Environment:
     """Format multiple lines inside a LaTeX split-like environment."""
     if not isinstance(lines, (list, tuple)):
         lines = [lines]
@@ -157,11 +157,7 @@ def split(
                     )
         else:
             formatted_lines.append(str(line))
-    return (
-        f"\\begin{{{environment}}}\n\t"
-        + "\\\\\n\t".join(formatted_lines)
-        + f"\n\\end{{{environment}}}"
-    )
+    return Environment(environment, content = "\\\\\n\t".join(formatted_lines))
 
 
 __all__ = [
